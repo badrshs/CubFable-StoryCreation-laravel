@@ -274,7 +274,7 @@ Write exactly {$pageCount} pages. {$main->name} is the hero; refer to other char
   - "text": 2-3 short sentences of the story written in {$langName} (this is what the child reads).
   - "scene": a single vivid sentence in ENGLISH describing what is visually happening on that page (for the illustrator). ALWAYS write "scene" in English regardless of the story language. Mention by name which characters are present.
 
-MOOD RULE for every "scene": {$main->name} always looks HAPPY - smiling, delighted, excited, amazed or proudly brave. Never describe {$main->name} or any child as sad, crying, scared, worried, hurt or upset in a scene; when the story has a challenge, show cheerful determination or wide-eyed wonder instead.
+MOOD RULE for every "scene": {$main->name}'s expression should fit the moment while staying positive - joyful in happy moments; curious, calm, focused, amazed, cozy or gently brave in quiet or challenging ones. Never describe {$main->name} or any child as sad, crying, scared, hurt or distressed. Do not force a smile into a moment where it would look odd.
 
 Return ONLY a JSON array of {$pageCount} objects: [{"text":"...","scene":"..."}]. No other text.
 PROMPT;
@@ -491,7 +491,7 @@ Characters in this scene (draw each EXACTLY and consistently):
 {$anchorNote}
 CHARACTER CONSISTENCY IS CRITICAL: keep every character's face, hair, facial hair, skin tone, outfit and accessories identical in every scene. Never change a character's appearance between pages. Redraw any photo-referenced character in the {$book->art_style} art style (an illustration, never a photo).
 
-MOOD IS CRITICAL: {$main->name} is always visibly HAPPY - a bright joyful expression (big smile, delighted, excited or wonder-struck). NEVER draw {$main->name} or any child looking sad, crying, scared, worried, angry or upset; in challenging moments show a brave, cheerful expression instead.
+MOOD IS CRITICAL: {$main->name}'s expression must match the scene while staying positive - joyful when the moment is happy; curious, calm, focused, amazed or gently brave when it is quiet, mysterious or challenging. NEVER draw {$main->name} or any child looking sad, crying, scared, angry or distressed, and do NOT force a big smile where it does not fit the moment.
 
 Style: warm, magical, safe for children, 16:9 landscape format, detailed background showing the {$book->theme} setting. No text or letters in the image. High quality illustration.
 PROMPT;
