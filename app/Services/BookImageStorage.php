@@ -80,4 +80,13 @@ class BookImageStorage
 
         Storage::disk('public')->delete($path);
     }
+
+    /**
+     * Delete a whole directory of stored images (e.g. everything a deleted
+     * book owned).
+     */
+    public function deleteDirectory(string $directory): void
+    {
+        Storage::disk('public')->deleteDirectory($directory);
+    }
 }

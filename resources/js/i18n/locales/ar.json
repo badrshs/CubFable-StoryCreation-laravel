@@ -393,5 +393,11 @@
     "wizard.reviewEyebrow": "نظرة أخيرة",
     "gallery.weavingPage": "ننسج الصفحة {page} من {total}",
     "gallery.finishCheckout": "اضغط لإتمام الدفع",
-    "gallery.addAnotherTale": "ابدأ حكاية جديدة"
+    "gallery.addAnotherTale": "ابدأ حكاية جديدة",
+    "gallery.editDraft": "تعديل التفاصيل",
+    "gallery.deleteDraft": "حذف المسودة",
+    "gallery.deleteDraftTitle": "حذف هذه المسودة؟",
+    "gallery.deleteDraftBody": "لم يتم الدفع لهذه الحكاية بعد. ستحذف المسودة، وتبقى شخصياتك المحفوظة في المكتبة.",
+    "checkout.editDetails": "تغيير التفاصيل",
+    "wizard.editEyebrow": "عدل حكايتك"
 }

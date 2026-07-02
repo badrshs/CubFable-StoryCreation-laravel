@@ -7,6 +7,7 @@ use App\Enums\PageStatus;
 use App\Enums\StoryLanguage;
 use App\Http\Controllers\Concerns\MapsCubfableProps;
 use App\Http\Requests\StoreBookRequest;
+use App\Http\Requests\UpdateBookRequest;
 use App\Jobs\RegenerateCoverJob;
 use App\Models\Book;
 use App\Models\Character;
@@ -132,6 +133,115 @@ class BookController extends Controller
         return Inertia::render('reader', [
             'book' => $this->bookWithPagesProps($book),
         ]);
+    }
+
+    /**
+     * Reopen the wizard for an unpaid draft so its details can still change.
+     * Paid books are locked; they bounce to the reader.
+     */
+    public function edit(Request $request, int $id): Response|RedirectResponse
+    {
+        $book = $request->user()->books()->with(['template', 'characters'])->findOrFail($id);
+
+        if ($book->status !== BookStatus::Draft) {
+            return redirect()->route('books.show', ['id' => $book->id]);
+        }
+
+        $savedCharacters = $request->user()->characters()
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get();
+
+        return Inertia::render('create-wizard', [
+            'template' => $this->templateProps($book->template),
+            'savedCharacters' => $savedCharacters
+                ->map(fn (Character $character): array => $this->characterProps($character))
+                ->all(),
+            'book' => [
+                ...$this->bookProps($book),
+                'characters' => $book->characters
+                    ->map(fn (Character $character): array => $this->characterProps($character))
+                    ->all(),
+            ],
+        ]);
+    }
+
+    /**
+     * Apply wizard changes to an unpaid draft (fields + cast), then return to
+     * checkout. The cast pivot is rebuilt; the characters themselves stay in
+     * the user's library.
+     */
+    public function update(UpdateBookRequest $request, BookImageStorage $images, int $id): RedirectResponse
+    {
+        $book = $request->user()->books()->findOrFail($id);
+
+        if ($book->status !== BookStatus::Draft) {
+            return redirect()->route('books.show', ['id' => $book->id]);
+        }
+
+        $input = $request->validated();
+        $user = $request->user();
+
+        /** @var array<int, array<string, mixed>> $cast */
+        $cast = $input['characters'];
+
+        $mainIndex = $this->mainCastIndex($cast);
+
+        try {
+            DB::transaction(function () use ($book, $input, $cast, $mainIndex, $user, $images): void {
+                $resolved = [];
+
+                foreach ($cast as $member) {
+                    $resolved[] = $this->resolveCastMember($user, $member, $images);
+                }
+
+                $hero = $resolved[$mainIndex];
+
+                $book->update([
+                    'child_name' => $hero->name,
+                    'age_range' => $input['ageRange'],
+                    'theme' => $input['theme'],
+                    'subject' => $input['subject'],
+                    'life_lesson' => $input['lifeLesson'],
+                    'art_style' => $input['artStyle'],
+                    'font' => $input['font'],
+                    'language' => $input['language'] ?? $book->language,
+                ]);
+
+                $book->characters()->detach();
+
+                foreach ($resolved as $index => $character) {
+                    $book->characters()->attach($character->id, [
+                        'is_main' => $index === $mainIndex,
+                        'sort_order' => $index,
+                    ]);
+                }
+            });
+        } catch (InvalidArgumentException $exception) {
+            throw ValidationException::withMessages(['characters' => $exception->getMessage()]);
+        }
+
+        return redirect()->route('checkout.show', ['id' => $book->id]);
+    }
+
+    /**
+     * Remove an unpaid draft. Paid books are keepsakes and cannot be deleted
+     * here; the cast characters always stay in the library.
+     */
+    public function destroy(Request $request, BookImageStorage $images, int $id): RedirectResponse
+    {
+        $book = $request->user()->books()->findOrFail($id);
+
+        if ($book->status !== BookStatus::Draft) {
+            return redirect()->route('books.show', ['id' => $book->id]);
+        }
+
+        $book->delete();
+
+        // Drafts have no generated art, but clear any stray files defensively.
+        $images->deleteDirectory("books/{$book->id}");
+
+        return redirect()->route('books.index');
     }
 
     /**

@@ -393,5 +393,11 @@
     "wizard.reviewEyebrow": "Vistazo final",
     "gallery.weavingPage": "Tejiendo la página {page} de {total}",
     "gallery.finishCheckout": "Toca para completar el pago",
-    "gallery.addAnotherTale": "Comienza un nuevo cuento"
+    "gallery.addAnotherTale": "Comienza un nuevo cuento",
+    "gallery.editDraft": "Editar detalles",
+    "gallery.deleteDraft": "Eliminar borrador",
+    "gallery.deleteDraftTitle": "¿Eliminar este borrador?",
+    "gallery.deleteDraftBody": "Este cuento aún no se ha pagado. El borrador se eliminará; tus personajes guardados permanecen en la biblioteca.",
+    "checkout.editDetails": "Cambiar detalles",
+    "wizard.editEyebrow": "Edita tu cuento"
 }

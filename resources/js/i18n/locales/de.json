@@ -393,5 +393,11 @@
     "wizard.reviewEyebrow": "Letzter Blick",
     "gallery.weavingPage": "Seite {page} von {total} wird gewoben",
     "gallery.finishCheckout": "Zum Abschluss der Zahlung tippen",
-    "gallery.addAnotherTale": "Eine neue Geschichte beginnen"
+    "gallery.addAnotherTale": "Eine neue Geschichte beginnen",
+    "gallery.editDraft": "Details bearbeiten",
+    "gallery.deleteDraft": "Entwurf löschen",
+    "gallery.deleteDraftTitle": "Diesen Entwurf löschen?",
+    "gallery.deleteDraftBody": "Diese Geschichte wurde noch nicht bezahlt. Der Entwurf wird entfernt; gespeicherte Figuren bleiben in der Bibliothek.",
+    "checkout.editDetails": "Details ändern",
+    "wizard.editEyebrow": "Bearbeite deine Geschichte"
 }

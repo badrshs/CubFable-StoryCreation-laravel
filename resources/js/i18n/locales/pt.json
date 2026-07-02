@@ -393,5 +393,11 @@
     "wizard.reviewEyebrow": "Olhar final",
     "gallery.weavingPage": "Tecendo a página {page} de {total}",
     "gallery.finishCheckout": "Toque para concluir o pagamento",
-    "gallery.addAnotherTale": "Comece um novo conto"
+    "gallery.addAnotherTale": "Comece um novo conto",
+    "gallery.editDraft": "Editar detalhes",
+    "gallery.deleteDraft": "Excluir rascunho",
+    "gallery.deleteDraftTitle": "Excluir este rascunho?",
+    "gallery.deleteDraftBody": "Este conto ainda não foi pago. O rascunho será removido; seus personagens salvos permanecem na biblioteca.",
+    "checkout.editDetails": "Alterar detalhes",
+    "wizard.editEyebrow": "Edite o seu conto"
 }

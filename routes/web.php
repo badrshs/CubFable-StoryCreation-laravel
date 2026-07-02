@@ -22,6 +22,9 @@ Route::middleware(['auth'])->group(function () {
     Route::get('books', [BookController::class, 'index'])->name('books.index');
     Route::post('books', [BookController::class, 'store'])->name('books.store');
     Route::get('books/{id}', [BookController::class, 'show'])->whereNumber('id')->name('books.show');
+    Route::get('books/{id}/edit', [BookController::class, 'edit'])->whereNumber('id')->name('books.edit');
+    Route::patch('books/{id}', [BookController::class, 'update'])->whereNumber('id')->name('books.update');
+    Route::delete('books/{id}', [BookController::class, 'destroy'])->whereNumber('id')->name('books.destroy');
     Route::post('books/{id}/regenerate-cover', [BookController::class, 'regenerateCover'])->whereNumber('id')->name('books.regenerate-cover');
     Route::get('books/{id}/download', BookDownloadController::class)->whereNumber('id')->name('books.download');
 

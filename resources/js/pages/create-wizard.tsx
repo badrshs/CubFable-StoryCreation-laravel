@@ -36,10 +36,11 @@ import {
     SUBJECTS,
     defaultStoryLanguage,
 } from '@/lib/story-options';
-import { store } from '@/routes/books';
+import { store, update } from '@/routes/books';
 import type {
     AgeRange,
     ArtStyle,
+    Book,
     BookFont,
     Character,
     StoryLanguage,
@@ -112,39 +113,78 @@ function stepForErrorKey(key: string): number {
     return STEP_FOR_FIELD[key] ?? 1;
 }
 
+// When editing an unpaid draft the wizard receives the book with its cast
+// (hero flagged isMain) and initializes every control from it.
+type EditableBook = Book & {
+    characters: (Character & { isMain?: boolean })[];
+};
+
 type CreateWizardProps = {
     template: Template;
     savedCharacters: Character[];
+    book?: EditableBook;
 };
+
+// Only freshly uploaded photos travel as data URLs; an existing photo comes
+// back from the server as a /storage URL and must not be re-submitted (the
+// server keeps the stored file when photoUrl is absent).
+function submittablePhoto(value: string | null): string | undefined {
+    return value !== null && value.startsWith('data:') ? value : undefined;
+}
 
 export default function CreateWizard({
     template,
     savedCharacters,
+    book,
 }: CreateWizardProps) {
     const t = useT();
     const { lang, tc } = useI18n();
     const reduceMotion = useReducedMotion();
 
+    const editing = book !== undefined;
+    const heroFromBook =
+        book?.characters.find((c) => c.isMain) ?? book?.characters[0];
+    const supportingFromBook =
+        book?.characters.filter((c) => c !== heroFromBook) ?? [];
+
     const [step, setStep] = useState(1);
     const totalSteps = 3;
 
     // Hero (the main character)
-    const [photoPreview, setPhotoPreview] = useState<string | null>(null);
-    const [childName, setChildName] = useState('');
-    const [heroCharacterId, setHeroCharacterId] = useState<number | null>(null);
+    const [photoPreview, setPhotoPreview] = useState<string | null>(
+        heroFromBook?.photoUrl ?? null,
+    );
+    const [childName, setChildName] = useState(book?.childName ?? '');
+    const [heroCharacterId, setHeroCharacterId] = useState<number | null>(
+        heroFromBook?.id ?? null,
+    );
 
-    const [ageRange, setAgeRange] = useState<AgeRange>('4-6');
-    const [theme, setTheme] = useState('');
-    const [subject, setSubject] = useState('');
-    const [lifeLesson, setLifeLesson] = useState('');
-    const [artStyle, setArtStyle] = useState<ArtStyle>('watercolor');
-    const [font, setFont] = useState<BookFont>('classic');
+    const [ageRange, setAgeRange] = useState<AgeRange>(book?.ageRange ?? '4-6');
+    const [theme, setTheme] = useState(book?.theme ?? '');
+    const [subject, setSubject] = useState(book?.subject ?? '');
+    const [lifeLesson, setLifeLesson] = useState(book?.lifeLesson ?? '');
+    const [artStyle, setArtStyle] = useState<ArtStyle>(
+        (book?.artStyle as ArtStyle) ?? 'watercolor',
+    );
+    const [font, setFont] = useState<BookFont>(
+        (book?.font as BookFont) ?? 'classic',
+    );
     // Story language defaults to the website language when the AI supports it,
     // otherwise English (e.g. an Arabic UI still produces an English story).
-    const [storyLang, setStoryLang] = useState<StoryLanguage>(() =>
-        defaultStoryLanguage(lang),
+    const [storyLang, setStoryLang] = useState<StoryLanguage>(
+        () => (book?.language as StoryLanguage) ?? defaultStoryLanguage(lang),
     );
-    const [characters, setCharacters] = useState<CastRow[]>([emptyRow()]);
+    const [characters, setCharacters] = useState<CastRow[]>(() =>
+        supportingFromBook.length > 0
+            ? supportingFromBook.map((c) => ({
+                  characterId: c.id,
+                  name: c.name,
+                  relation: c.role ?? '',
+                  description: c.description ?? '',
+                  photoUrl: c.photoUrl,
+              }))
+            : [emptyRow()],
+    );
 
     const [submitting, setSubmitting] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -238,7 +278,7 @@ export default function CreateWizard({
                 characterId: heroCharacterId ?? undefined,
                 name: childName,
                 role: 'self',
-                photoUrl: photoPreview ?? undefined,
+                photoUrl: submittablePhoto(photoPreview),
                 isMain: true,
             },
             ...characters
@@ -248,44 +288,47 @@ export default function CreateWizard({
                     name: c.name,
                     role: c.relation || undefined,
                     description: c.description || undefined,
-                    photoUrl: c.photoUrl ?? undefined,
+                    photoUrl: submittablePhoto(c.photoUrl),
                     isMain: false,
                 })),
         ];
 
-        router.post(
-            store.url(),
-            {
-                templateId: template.id,
-                childName,
-                ageRange,
-                theme: theme || template.theme,
-                subject: subject || 'Adventure',
-                lifeLesson:
-                    lifeLesson || (template.lifeLessons?.[0] ?? 'Kindness'),
-                artStyle,
-                font,
-                language: storyLang,
-                characters: cast,
-            },
-            {
-                onStart: () => {
-                    setSubmitting(true);
-                    setErrors({});
-                },
-                onError: (formErrors) => {
-                    setErrors(formErrors);
-                    const steps = Object.keys(formErrors).map(stepForErrorKey);
+        const payload = {
+            templateId: template.id,
+            childName,
+            ageRange,
+            theme: theme || template.theme,
+            subject: subject || 'Adventure',
+            lifeLesson: lifeLesson || (template.lifeLessons?.[0] ?? 'Kindness'),
+            artStyle,
+            font,
+            language: storyLang,
+            characters: cast,
+        };
 
-                    if (steps.length > 0) {
-                        setStep(Math.min(...steps));
-                    }
-                },
-                onFinish: () => {
-                    setSubmitting(false);
-                },
+        const visitOptions = {
+            onStart: () => {
+                setSubmitting(true);
+                setErrors({});
             },
-        );
+            onError: (formErrors: Record<string, string>) => {
+                setErrors(formErrors);
+                const steps = Object.keys(formErrors).map(stepForErrorKey);
+
+                if (steps.length > 0) {
+                    setStep(Math.min(...steps));
+                }
+            },
+            onFinish: () => {
+                setSubmitting(false);
+            },
+        };
+
+        if (editing && book) {
+            router.patch(update.url({ id: book.id }), payload, visitOptions);
+        } else {
+            router.post(store.url(), payload, visitOptions);
+        }
     };
 
     // A saved character chosen for the hero shows a "reused" hint.
@@ -333,7 +376,9 @@ export default function CreateWizard({
             <div className="mb-8 text-center">
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-gold/15 px-3.5 py-1 font-display text-xs font-bold tracking-[0.18em] text-gold uppercase">
                     <Wand2 className="h-3.5 w-3.5" />{' '}
-                    {tc('wizard.eyebrow', 'Personalize your tale')}
+                    {editing
+                        ? tc('wizard.editEyebrow', 'Edit your tale')
+                        : tc('wizard.eyebrow', 'Personalize your tale')}
                 </span>
                 <h1 className="mt-3 font-serif text-3xl font-bold text-foreground md:text-4xl">
                     {tc(`tpl.${template.theme}.title`, template.title)}

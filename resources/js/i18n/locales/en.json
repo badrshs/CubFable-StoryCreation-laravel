@@ -393,5 +393,11 @@
     "wizard.reviewEyebrow": "Final look",
     "gallery.weavingPage": "Weaving page {page} of {total}",
     "gallery.finishCheckout": "Tap to finish checkout",
-    "gallery.addAnotherTale": "Begin a new tale"
+    "gallery.addAnotherTale": "Begin a new tale",
+    "gallery.editDraft": "Edit details",
+    "gallery.deleteDraft": "Delete draft",
+    "gallery.deleteDraftTitle": "Delete this draft?",
+    "gallery.deleteDraftBody": "This tale has not been paid for yet. The draft will be removed; your saved characters stay in the library.",
+    "checkout.editDetails": "Change details",
+    "wizard.editEyebrow": "Edit your tale"
 }

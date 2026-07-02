@@ -6,14 +6,26 @@ import {
     CheckCircle2,
     Loader2,
     Moon,
+    Pencil,
     Plus,
     RefreshCw,
     Sparkles,
+    Trash2,
 } from 'lucide-react';
 import type { MouseEvent, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import BookCover from '@/components/cubfable/book-cover';
 import Starfield from '@/components/cubfable/starfield';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { useT } from '@/i18n';
 import { easeOutSoft, fadeUp, staggerContainer } from '@/lib/motion';
@@ -206,6 +218,8 @@ function ShelfPlank() {
 function ShelfBook({ book }: { book: GalleryBook }) {
     const t = useT();
     const [regenerating, setRegenerating] = useState(false);
+    const [confirmingDelete, setConfirmingDelete] = useState(false);
+    const [deleting, setDeleting] = useState(false);
 
     // Redrawing covers both the in-flight request and the queued job reported
     // by the server on later reloads.
@@ -332,9 +346,87 @@ function ShelfBook({ book }: { book: GalleryBook }) {
                                 </div>
                             </div>
                         )}
+
+                        {/* A draft is still the reader's to shape: edit or
+                            discard it right from the shelf (always visible,
+                            since drafts have no hover-discoverable actions) */}
+                        {isDraft && (
+                            <div className="absolute end-2 top-2 z-10 flex flex-col gap-1.5">
+                                <Link
+                                    href={bookRoutes.edit(book.id)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    title={t('gallery.editDraft')}
+                                    aria-label={t('gallery.editDraft')}
+                                    className="hover:glow-gold inline-flex items-center justify-center rounded-full bg-background/80 p-2 text-gold shadow-soft backdrop-blur-sm transition-all duration-300 hover:bg-background focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+                                >
+                                    <Pencil className="h-4 w-4" />
+                                </Link>
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setConfirmingDelete(true);
+                                    }}
+                                    title={t('gallery.deleteDraft')}
+                                    aria-label={t('gallery.deleteDraft')}
+                                    className="inline-flex items-center justify-center rounded-full bg-background/80 p-2 text-rose shadow-soft backdrop-blur-sm transition-all duration-300 hover:bg-background focus-visible:ring-2 focus-visible:ring-rose focus-visible:outline-none"
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
             </Link>
+
+            {/* Draft delete confirmation */}
+            {isDraft && (
+                <AlertDialog
+                    open={confirmingDelete}
+                    onOpenChange={setConfirmingDelete}
+                >
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>
+                                {t('gallery.deleteDraftTitle')}
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                                {t('gallery.deleteDraftBody')}
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel disabled={deleting}>
+                                {t('library.cancel')}
+                            </AlertDialogCancel>
+                            <AlertDialogAction
+                                disabled={deleting}
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    router.delete(
+                                        bookRoutes.destroy.url(book.id),
+                                        {
+                                            preserveScroll: true,
+                                            onStart: () => setDeleting(true),
+                                            onFinish: () => {
+                                                setDeleting(false);
+                                                setConfirmingDelete(false);
+                                            },
+                                        },
+                                    );
+                                }}
+                                className="bg-rose text-rose-foreground hover:bg-rose/90"
+                            >
+                                {deleting ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    t('library.confirmDelete')
+                                )}
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+            )}
 
             {/* Plank zone spacer: the shelf runs through here */}
             <div aria-hidden className="h-5" />

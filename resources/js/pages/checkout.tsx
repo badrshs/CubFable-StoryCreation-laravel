@@ -17,6 +17,7 @@ import {
     Info,
     Lock,
     Palette,
+    Pencil,
     ShieldCheck,
     Sparkles,
     Wand2,
@@ -31,7 +32,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { useT } from '@/i18n';
 import { easeOutSoft, fadeUp, staggerContainer } from '@/lib/motion';
-import { index, show } from '@/routes/books';
+import bookRoutes, { index, show } from '@/routes/books';
 import type { Book } from '@/types';
 
 // Slugs like "under_the_sea" are stored raw; render them as gentle Title Case.
@@ -339,6 +340,13 @@ export default function Checkout({
                                         name: book.childName,
                                     })}
                                 </p>
+                                <Link
+                                    href={bookRoutes.edit(book.id)}
+                                    className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                                >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                    {t('checkout.editDetails')}
+                                </Link>
                             </div>
                         </div>
 

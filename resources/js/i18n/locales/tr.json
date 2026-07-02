@@ -393,5 +393,11 @@
     "wizard.reviewEyebrow": "Son bakış",
     "gallery.weavingPage": "Sayfa {page}/{total} örülüyor",
     "gallery.finishCheckout": "Ödemeyi tamamlamak için dokunun",
-    "gallery.addAnotherTale": "Yeni bir masala başla"
+    "gallery.addAnotherTale": "Yeni bir masala başla",
+    "gallery.editDraft": "Ayrıntıları düzenle",
+    "gallery.deleteDraft": "Taslağı sil",
+    "gallery.deleteDraftTitle": "Bu taslak silinsin mi?",
+    "gallery.deleteDraftBody": "Bu masal için henüz ödeme yapılmadı. Taslak kaldırılacak; kayıtlı karakterleriniz kitaplıkta kalır.",
+    "checkout.editDetails": "Ayrıntıları değiştir",
+    "wizard.editEyebrow": "Masalını düzenle"
 }

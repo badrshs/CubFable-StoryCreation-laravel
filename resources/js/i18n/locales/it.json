@@ -393,5 +393,11 @@
     "wizard.reviewEyebrow": "Uno sguardo finale",
     "gallery.weavingPage": "Stiamo tessendo la pagina {page} di {total}",
     "gallery.finishCheckout": "Tocca per completare il pagamento",
-    "gallery.addAnotherTale": "Inizia una nuova storia"
+    "gallery.addAnotherTale": "Inizia una nuova storia",
+    "gallery.editDraft": "Modifica dettagli",
+    "gallery.deleteDraft": "Elimina bozza",
+    "gallery.deleteDraftTitle": "Eliminare questa bozza?",
+    "gallery.deleteDraftBody": "Questa storia non è ancora stata pagata. La bozza verrà rimossa; i personaggi salvati restano nella libreria.",
+    "checkout.editDetails": "Cambia dettagli",
+    "wizard.editEyebrow": "Modifica la tua storia"
 }
