@@ -84,6 +84,11 @@ class GenerateStorybookJobTest extends TestCase
             Storage::disk('public')->assertExists($page->image_path);
             $this->assertStringContainsString('page '.($index + 1), (string) $page->image_prompt);
             $this->assertStringContainsString('MOOD IS CRITICAL', (string) $page->image_prompt);
+
+            // The anchored hero is identified by the reference image alone;
+            // no text description competes with it.
+            $this->assertStringContainsString('reference image 1 (the character sheet)', (string) $page->image_prompt);
+            $this->assertStringNotContainsString('Short curly brown hair', (string) $page->image_prompt);
         }
 
         $usage = AiUsage::query()->where('book_id', $book->id)->get();
@@ -217,6 +222,12 @@ class GenerateStorybookJobTest extends TestCase
         $this->assertSame(4, ImagePrompt::query()->where('book_id', $book->id)->where('accepted', true)->count());
         $this->assertSame(4, Http::recorded(fn (Request $request): bool => str_contains($request->url(), 'images/edits'))->count());
         $this->assertSame(0, Http::recorded(fn (Request $request): bool => str_contains($request->url(), 'images/generations'))->count());
+
+        // With the photo attached, the prompt points at the reference and
+        // carries no competing text description of the hero.
+        $pagePrompt = (string) $book->pages()->first()->image_prompt;
+        $this->assertStringContainsString('attached reference image 1', $pagePrompt);
+        $this->assertStringNotContainsString('Short curly brown hair', $pagePrompt);
     }
 
     public function test_photo_mode_still_builds_a_sheet_when_there_is_no_photo(): void

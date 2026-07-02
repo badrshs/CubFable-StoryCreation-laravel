@@ -350,11 +350,12 @@ PROMPT;
         $usePhoto = $this->hasUsablePhoto($main);
         $references = $usePhoto ? [new ImageReference((string) $main->photo_path, $main->name)] : [];
 
+        // Reference OR description, never both (see buildScene).
         $photoNote = $usePhoto
-            ? ' Match the child in the reference photo faithfully: same face, hairstyle, hair color, skin tone, eye color and build, redrawn in the art style (an illustration, never a photo).'
+            ? ' Match the child in the attached reference photo faithfully: same face, hairstyle, hair color, skin tone, eye color and build, redrawn in the art style (an illustration, never a photo).'
             : '';
         $appearance = trim((string) $main->appearance);
-        $appearanceClause = $appearance !== '' ? " {$main->name}'s appearance: {$appearance}" : '';
+        $appearanceClause = ! $usePhoto && $appearance !== '' ? " {$main->name}'s appearance: {$appearance}" : '';
 
         $prompt = <<<PROMPT
 {$artStyle}. Character reference sheet for a children's picture book.
@@ -377,6 +378,21 @@ PROMPT;
         $preference = strtolower(trim((string) config('cubfable.ai.identity_reference', 'sheet')));
 
         return ! ($preference === 'photo' && $this->hasUsablePhoto($main));
+    }
+
+    /**
+     * How many reference images can actually travel with one request, so
+     * prompts only describe characters whose reference cannot be sent.
+     * The flow gateway carries exactly one; other providers follow the
+     * configurable cap (0 = unlimited).
+     */
+    private function referenceBudget(): int
+    {
+        if ((string) config('cubfable.ai.image_provider') === 'flow') {
+            return 1;
+        }
+
+        return (int) config('cubfable.ai.max_image_references', 0);
     }
 
     /**
@@ -410,37 +426,50 @@ PROMPT;
             fn (Character $character): bool => $character->id === $main->id || $this->nameInText($character->name, $matchText),
         );
 
+        // Reference OR description, never both: a character whose reference
+        // image actually travels with the request is identified by that image
+        // alone (a text description would only fight it). Descriptions remain
+        // for characters whose reference cannot be sent.
+        $budget = $this->referenceBudget();
         $references = [];
+        $anchorNote = '';
+
+        if ($anchor !== null) {
+            $references[] = $anchor;
+            $anchorNote = "\nReference image 1 is the definitive character sheet for {$main->name}: copy their face, hairstyle, skin tone, outfit, colors and proportions EXACTLY as drawn there. It is already in the target art style; reproduce that exact rendition of {$main->name} in this scene.\n";
+        }
+
         $lines = [];
 
         foreach ($present as $member) {
-            $hasPhoto = $this->hasUsablePhoto($member);
+            $anchorCoversMember = $member->id === $main->id && $anchor !== null;
 
-            if ($hasPhoto) {
+            $withinBudget = ! $anchorCoversMember
+                && $this->hasUsablePhoto($member)
+                && ($budget === 0 || count($references) < $budget);
+
+            if ($withinBudget) {
                 $references[] = new ImageReference((string) $member->photo_path, $member->name);
             }
 
             $roleText = $member->id === $main->id
                 ? 'the main character/hero'
                 : ($member->role !== null && $member->role !== '' ? $member->role : 'character');
-            $photoNote = $hasPhoto
-                ? ' (a reference photo of this character is provided - match their face, hair and build, redrawn in the art style, never a photo)'
-                : '';
-            $appearance = trim((string) $member->appearance);
 
-            $lines[] = "- {$member->name}, {$roleText}{$photoNote}: ".($appearance !== '' ? $appearance : '(invent a consistent look)');
+            if ($withinBudget) {
+                $position = count($references);
+                $lines[] = "- {$member->name}, {$roleText}: shown in attached reference image {$position} - copy their face, hair, build and outfit exactly from it, redrawn in the art style (an illustration, never a photo).";
+            } elseif ($anchorCoversMember) {
+                $lines[] = "- {$member->name}, {$roleText}: shown in attached reference image 1 (the character sheet).";
+            } else {
+                $appearance = trim((string) $member->appearance);
+                $lines[] = "- {$member->name}, {$roleText}: ".($appearance !== '' ? $appearance : '(invent a consistent look)');
+            }
         }
 
         $subjectNote = $book->subject !== ''
             ? "\nThe story is about {$book->subject} - reflect it in the setting, props and action wherever it fits naturally."
             : '';
-
-        $anchorNote = '';
-
-        if ($anchor !== null) {
-            array_unshift($references, $anchor);
-            $anchorNote = "\nThe FIRST reference image is the definitive character sheet for {$main->name}: copy their face, hairstyle, skin tone, outfit, colors and proportions EXACTLY as drawn there. It is already in the target art style; reproduce that exact rendition of {$main->name} in this scene.\n";
-        }
 
         $characterLines = implode("\n", $lines);
 
@@ -483,24 +512,27 @@ PROMPT;
     private function generateCoverImage(Book $book, Character $main, ?ImageReference $anchor = null): GeneratedImage
     {
         $artStyle = self::ART_STYLE_PROMPTS[$book->art_style] ?? self::ART_STYLE_PROMPTS['storybook'];
-        $usePhotoCover = $this->hasUsablePhoto($main);
-        $coverReferences = $usePhotoCover ? [new ImageReference((string) $main->photo_path, $main->name)] : [];
         $coverSubtitle = self::COVER_SUBTITLES[$book->theme] ?? 'A Magical Adventure';
 
-        $photoNote = $usePhotoCover
-            ? ', the child shown in the reference photo (keep their face, hair and outfit clearly recognizable but redrawn in the art style, never a photograph)'
-            : '';
-        $anchorClause = '';
+        // Reference OR description, never both (see buildScene).
+        $coverReferences = [];
+        $photoNote = '';
+        $identityClause = '';
 
         if ($anchor !== null) {
-            array_unshift($coverReferences, $anchor);
-            $anchorClause = " The FIRST reference image is the definitive character sheet for {$main->name}: copy their face, hairstyle, skin tone, outfit and colors exactly as drawn there.";
+            $coverReferences[] = $anchor;
+            $identityClause = " The attached reference image is the definitive character sheet for {$main->name}: copy their face, hairstyle, skin tone, outfit and colors exactly as drawn there.";
+        } elseif ($this->hasUsablePhoto($main)) {
+            $coverReferences[] = new ImageReference((string) $main->photo_path, $main->name);
+            $photoNote = ', the child shown in the attached reference photo (keep their face, hair and outfit clearly recognizable but redrawn in the art style, never a photograph)';
+        } else {
+            $appearance = trim((string) $main->appearance);
+            $identityClause = $appearance !== '' ? " {$main->name}'s appearance: {$appearance}." : '';
         }
+
         $subjectClause = $book->subject !== ''
             ? ", with the story's subject ({$book->subject}) clearly featured in the scene"
             : '';
-        $appearance = trim((string) $main->appearance);
-        $appearanceClause = $appearance !== '' ? " {$main->name}'s appearance: {$appearance}." : '';
 
         $coverPrompt = <<<PROMPT
 A professionally illustrated children's storybook FRONT COVER, portrait orientation, in the {$book->art_style} art style ({$artStyle}). Make it look like a real published picture book.
@@ -509,7 +541,7 @@ TITLE TEXT (render it directly in the artwork at the top, beautifully and spelle
   - First line: "{$main->name}" as large, flowing, golden hand-lettered script.
   - Second line: "{$coverSubtitle}" in a smaller elegant classic serif.
 
-Below the title, {$main->name}{$photoNote} as the central hero, beaming with a big joyful smile, in a {$book->theme} setting{$subjectClause}.{$appearanceClause}{$anchorClause} {$main->name} must look radiantly happy - never sad, scared or upset.
+Below the title, {$main->name}{$photoNote} as the central hero, beaming with a big joyful smile, in a {$book->theme} setting{$subjectClause}.{$identityClause} {$main->name} must look radiantly happy - never sad, scared or upset.
 
 Leave a small clean margin around the edges (a decorative frame is added separately - do NOT draw a border yourself). Warm, magical, richly detailed, with the title clearly readable at the top. Spell the title exactly as written; do not add any other words or letters.
 PROMPT;
