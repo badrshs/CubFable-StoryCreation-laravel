@@ -3,6 +3,7 @@
 namespace App\Services\AI;
 
 use App\Services\AI\Contracts\AiProvider;
+use App\Services\AI\Providers\FlowImageProvider;
 use App\Services\AI\Providers\GeminiProvider;
 use App\Services\AI\Providers\OpenAiProvider;
 use App\Services\AI\Providers\OpenRouterProvider;
@@ -50,6 +51,7 @@ class AiManager
         return match (strtolower(trim($provider))) {
             'gemini' => $this->container->make(GeminiProvider::class),
             'openrouter' => $this->container->make(OpenRouterProvider::class),
+            'flow' => $this->container->make(FlowImageProvider::class),
             default => $this->container->make(OpenAiProvider::class),
         };
     }

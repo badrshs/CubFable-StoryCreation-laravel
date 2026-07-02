@@ -46,6 +46,7 @@ return [
                 'openai' => env('IMAGE_MODEL_OPENAI', 'gpt-image-1'),
                 'gemini' => env('IMAGE_MODEL_GEMINI', 'gemini-2.5-flash-image'),
                 'openrouter' => env('IMAGE_MODEL_OPENROUTER', 'google/gemini-2.5-flash-image'),
+                'flow' => env('IMAGE_MODEL_FLOW', 'grok-imagine'),
             ],
         ],
 
@@ -53,7 +54,14 @@ return [
             'openai' => env('OPENAI_API_KEY', ''),
             'gemini' => env('GEMINI_API_KEY', ''),
             'openrouter' => env('OPENROUTER_API_KEY', ''),
+            'flow' => env('FLOW_IMAGE_API_KEY', ''),
         ],
+
+        /*
+         * The local flow-image gateway (browser-driven Grok Imagine or Google
+         * Flow). Images only; select it with IMAGE_PROVIDER=flow.
+         */
+        'flow_base_url' => env('FLOW_IMAGE_BASE_URL', 'http://127.0.0.1:8787'),
 
         /*
          * Some image models cap how many reference images a request may

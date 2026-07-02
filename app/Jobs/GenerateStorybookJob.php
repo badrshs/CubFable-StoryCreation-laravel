@@ -18,7 +18,7 @@ class GenerateStorybookJob implements ShouldQueue
     /**
      * The number of seconds the job can run before timing out.
      */
-    public int $timeout = 1200;
+    public int $timeout = 3600;
 
     /**
      * The number of times the job may be attempted.
