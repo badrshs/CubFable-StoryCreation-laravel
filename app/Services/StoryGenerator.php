@@ -274,6 +274,8 @@ Write exactly {$pageCount} pages. {$main->name} is the hero; refer to other char
   - "text": 2-3 short sentences of the story written in {$langName} (this is what the child reads).
   - "scene": a single vivid sentence in ENGLISH describing what is visually happening on that page (for the illustrator). ALWAYS write "scene" in English regardless of the story language. Mention by name which characters are present.
 
+MOOD RULE for every "scene": {$main->name} always looks HAPPY - smiling, delighted, excited, amazed or proudly brave. Never describe {$main->name} or any child as sad, crying, scared, worried, hurt or upset in a scene; when the story has a challenge, show cheerful determination or wide-eyed wonder instead.
+
 Return ONLY a JSON array of {$pageCount} objects: [{"text":"...","scene":"..."}]. No other text.
 PROMPT;
 
@@ -357,7 +359,7 @@ PROMPT;
         $prompt = <<<PROMPT
 {$artStyle}. Character reference sheet for a children's picture book.
 
-A single full-body illustration of {$main->name} standing and facing the viewer in a relaxed, friendly pose, on a plain soft neutral background.{$photoNote}{$appearanceClause}
+A single full-body illustration of {$main->name} standing and facing the viewer in a relaxed, friendly pose with a big happy smile, on a plain soft neutral background.{$photoNote}{$appearanceClause}
 
 Exactly one character and nothing else in the frame. The character fills most of the frame so the face, hair, skin tone, outfit, colors and shoes are all clearly visible. No text, letters, numbers, labels, borders or logos anywhere.
 PROMPT;
@@ -452,6 +454,8 @@ Characters in this scene (draw each EXACTLY and consistently):
 {$anchorNote}
 CHARACTER CONSISTENCY IS CRITICAL: keep every character's face, hair, facial hair, skin tone, outfit and accessories identical in every scene. Never change a character's appearance between pages. Redraw any photo-referenced character in the {$book->art_style} art style (an illustration, never a photo).
 
+MOOD IS CRITICAL: {$main->name} is always visibly HAPPY - a bright joyful expression (big smile, delighted, excited or wonder-struck). NEVER draw {$main->name} or any child looking sad, crying, scared, worried, angry or upset; in challenging moments show a brave, cheerful expression instead.
+
 Style: warm, magical, safe for children, 16:9 landscape format, detailed background showing the {$book->theme} setting. No text or letters in the image. High quality illustration.
 PROMPT;
 
@@ -505,7 +509,7 @@ TITLE TEXT (render it directly in the artwork at the top, beautifully and spelle
   - First line: "{$main->name}" as large, flowing, golden hand-lettered script.
   - Second line: "{$coverSubtitle}" in a smaller elegant classic serif.
 
-Below the title, {$main->name}{$photoNote} as the central hero, in a {$book->theme} setting{$subjectClause}.{$appearanceClause}{$anchorClause}
+Below the title, {$main->name}{$photoNote} as the central hero, beaming with a big joyful smile, in a {$book->theme} setting{$subjectClause}.{$appearanceClause}{$anchorClause} {$main->name} must look radiantly happy - never sad, scared or upset.
 
 Leave a small clean margin around the edges (a decorative frame is added separately - do NOT draw a border yourself). Warm, magical, richly detailed, with the title clearly readable at the top. Spell the title exactly as written; do not add any other words or letters.
 PROMPT;

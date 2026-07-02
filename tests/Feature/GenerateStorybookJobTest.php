@@ -60,6 +60,10 @@ class GenerateStorybookJobTest extends TestCase
         $this->assertStringContainsString('FRONT COVER', (string) $book->cover_prompt);
         $this->assertStringContainsString('Character reference sheet', (string) $book->hero_sheet_prompt);
 
+        // The hero is always drawn happy, on the cover and on every page.
+        $this->assertStringContainsString('joyful smile', (string) $book->cover_prompt);
+        $this->assertStringContainsString('big happy smile', (string) $book->hero_sheet_prompt);
+
         // ... and every attempt is journaled (first attempts all succeed here).
         $journal = ImagePrompt::query()->where('book_id', $book->id)->get();
         $this->assertCount(5, $journal);
@@ -79,6 +83,7 @@ class GenerateStorybookJobTest extends TestCase
             $this->assertNotNull($page->image_path);
             Storage::disk('public')->assertExists($page->image_path);
             $this->assertStringContainsString('page '.($index + 1), (string) $page->image_prompt);
+            $this->assertStringContainsString('MOOD IS CRITICAL', (string) $page->image_prompt);
         }
 
         $usage = AiUsage::query()->where('book_id', $book->id)->get();
