@@ -28,8 +28,10 @@ use Illuminate\Support\Facades\Storage;
  * @property string $language
  * @property BookStatus $status
  * @property string|null $cover_image_path
+ * @property string|null $cover_prompt
  * @property string|null $cover_status
  * @property string|null $hero_sheet_path
+ * @property string|null $hero_sheet_prompt
  * @property Carbon|null $paid_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -48,8 +50,10 @@ use Illuminate\Support\Facades\Storage;
     'language',
     'status',
     'cover_image_path',
+    'cover_prompt',
     'cover_status',
     'hero_sheet_path',
+    'hero_sheet_prompt',
     'paid_at',
 ])]
 class Book extends Model

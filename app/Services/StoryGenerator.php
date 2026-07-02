@@ -11,6 +11,7 @@ use App\Models\Page;
 use App\Models\Template;
 use App\Services\AI\AiManager;
 use App\Services\AI\AppearanceDescriber;
+use App\Services\AI\GeneratedImage;
 use App\Services\AI\ImageReference;
 use App\Services\AI\SafeImageGenerator;
 use App\Services\AI\UsageCollector;
@@ -319,13 +320,13 @@ PROMPT;
     private function prepareHeroSheet(Book $book, Character $main): ?ImageReference
     {
         try {
-            $bytes = $this->generateHeroSheetImage($book, $main);
+            $image = $this->generateHeroSheetImage($book, $main);
             $path = sprintf('books/%d/sheet-%s.png', $book->id, Str::lower(Str::random(8)));
 
-            $this->images->storeGenerated($bytes, $path);
+            $this->images->storeGenerated($image->bytes, $path);
 
             $previous = $book->hero_sheet_path;
-            $book->update(['hero_sheet_path' => $path]);
+            $book->update(['hero_sheet_path' => $path, 'hero_sheet_prompt' => $image->prompt]);
 
             if ($previous !== $path) {
                 $this->images->delete($previous);
@@ -339,7 +340,7 @@ PROMPT;
         }
     }
 
-    private function generateHeroSheetImage(Book $book, Character $main): string
+    private function generateHeroSheetImage(Book $book, Character $main): GeneratedImage
     {
         $artStyle = self::ART_STYLE_PROMPTS[$book->art_style] ?? self::ART_STYLE_PROMPTS['storybook'];
         $usePhoto = $this->hasUsablePhoto($main);
@@ -446,7 +447,7 @@ PROMPT;
     /**
      * @param  Collection<int, Character>  $cast
      */
-    private function generatePageImage(string $sceneText, string $matchText, int $pageNumber, Book $book, Collection $cast, Character $main, ?ImageReference $anchor = null): string
+    private function generatePageImage(string $sceneText, string $matchText, int $pageNumber, Book $book, Collection $cast, Character $main, ?ImageReference $anchor = null): GeneratedImage
     {
         ['prompt' => $prompt, 'references' => $references] = $this->buildScene($book, "page {$pageNumber}", $sceneText, $matchText, $cast, $main, $anchor);
 
@@ -458,7 +459,7 @@ PROMPT;
      * decorative gold frame is added by the UI (BookCover), so the prompt asks
      * for a clean margin and no border.
      */
-    private function generateCoverImage(Book $book, Character $main, ?ImageReference $anchor = null): string
+    private function generateCoverImage(Book $book, Character $main, ?ImageReference $anchor = null): GeneratedImage
     {
         $artStyle = self::ART_STYLE_PROMPTS[$book->art_style] ?? self::ART_STYLE_PROMPTS['storybook'];
         $usePhotoCover = $this->hasUsablePhoto($main);
@@ -501,13 +502,13 @@ PROMPT;
      */
     private function storeCover(Book $book, Character $main, ?ImageReference $anchor = null): void
     {
-        $bytes = $this->generateCoverImage($book, $main, $anchor);
+        $image = $this->generateCoverImage($book, $main, $anchor);
         $path = sprintf('books/%d/cover-%s.png', $book->id, Str::lower(Str::random(8)));
 
-        $this->images->storeGenerated($bytes, $path);
+        $this->images->storeGenerated($image->bytes, $path);
 
         $previous = $book->cover_image_path;
-        $book->update(['cover_image_path' => $path]);
+        $book->update(['cover_image_path' => $path, 'cover_prompt' => $image->prompt]);
 
         if ($previous !== $path) {
             $this->images->delete($previous);
@@ -525,13 +526,13 @@ PROMPT;
         $sceneText = ($page->scene ?? '') !== '' ? (string) $page->scene : $page->text;
         $matchText = ($page->scene ?? '').' '.$page->text;
 
-        $bytes = $this->generatePageImage($sceneText, $matchText, $page->page_number, $book, $cast, $main, $anchor);
+        $image = $this->generatePageImage($sceneText, $matchText, $page->page_number, $book, $cast, $main, $anchor);
         $path = sprintf('books/%d/pages/%d-%s.png', $book->id, $page->page_number, Str::lower(Str::random(8)));
 
-        $this->images->storeGenerated($bytes, $path);
+        $this->images->storeGenerated($image->bytes, $path);
 
         $previous = $page->image_path;
-        $page->update(['image_path' => $path, 'status' => PageStatus::Complete]);
+        $page->update(['image_path' => $path, 'image_prompt' => $image->prompt, 'status' => PageStatus::Complete]);
 
         if ($previous !== $path) {
             $this->images->delete($previous);

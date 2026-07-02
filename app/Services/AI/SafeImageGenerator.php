@@ -26,7 +26,7 @@ class SafeImageGenerator
     /**
      * @param  list<ImageReference>  $references
      */
-    public function generate(string $prompt, string $size, array $references = [], string $label = 'image'): string
+    public function generate(string $prompt, string $size, array $references = [], string $label = 'image'): GeneratedImage
     {
         $rephrased = null;
         $getRephrased = function () use (&$rephrased, $prompt): string {
@@ -46,7 +46,11 @@ class SafeImageGenerator
             try {
                 $effectivePrompt = ($attempt['getPrompt'])();
 
-                return $this->ai->generateImage($effectivePrompt, $size, $attempt['refs']);
+                return new GeneratedImage(
+                    bytes: $this->ai->generateImage($effectivePrompt, $size, $attempt['refs']),
+                    prompt: $effectivePrompt,
+                    attempt: $index + 1,
+                );
             } catch (Throwable $exception) {
                 $lastException = $exception;
 

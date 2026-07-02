@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Storage;
  * @property string $text
  * @property string|null $scene
  * @property string|null $image_path
+ * @property string|null $image_prompt
  * @property PageStatus $status
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -30,6 +31,7 @@ use Illuminate\Support\Facades\Storage;
     'text',
     'scene',
     'image_path',
+    'image_prompt',
     'status',
 ])]
 class Page extends Model

@@ -55,6 +55,10 @@ class GenerateStorybookJobTest extends TestCase
         $this->assertNotNull($book->hero_sheet_path);
         Storage::disk('public')->assertExists($book->hero_sheet_path);
 
+        // Every generated image persists the prompt that produced it.
+        $this->assertStringContainsString('FRONT COVER', (string) $book->cover_prompt);
+        $this->assertStringContainsString('Character reference sheet', (string) $book->hero_sheet_prompt);
+
         $pages = $book->pages()->get();
         $this->assertCount(3, $pages);
 
@@ -63,6 +67,7 @@ class GenerateStorybookJobTest extends TestCase
             $this->assertSame(PageStatus::Complete, $page->status);
             $this->assertNotNull($page->image_path);
             Storage::disk('public')->assertExists($page->image_path);
+            $this->assertStringContainsString('page '.($index + 1), (string) $page->image_prompt);
         }
 
         $usage = AiUsage::query()->where('book_id', $book->id)->get();

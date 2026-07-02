@@ -34,9 +34,12 @@ class SafeImageGeneratorTest extends TestCase
                 ->push(['data' => [['b64_json' => self::PNG_BASE64]]]),
         ]);
 
-        $bytes = app(SafeImageGenerator::class)->generate('a child in the forest', '1536x1024', [], 'test');
+        $image = app(SafeImageGenerator::class)->generate('a child in the forest', '1536x1024', [], 'test');
 
-        $this->assertSame(base64_decode(self::PNG_BASE64), $bytes);
+        $this->assertSame(base64_decode(self::PNG_BASE64), $image->bytes);
+        // The result carries the prompt that finally succeeded, not the original.
+        $this->assertSame('A rewritten storybook prompt', $image->prompt);
+        $this->assertSame(3, $image->attempt);
 
         $imagePrompts = $this->sentImagePrompts();
         $this->assertCount(3, $imagePrompts);
@@ -79,9 +82,10 @@ class SafeImageGeneratorTest extends TestCase
             'api.openai.com/v1/images/generations' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
         ]);
 
-        $bytes = app(SafeImageGenerator::class)->generate('a child in the forest', '1536x1024', [$reference], 'test');
+        $image = app(SafeImageGenerator::class)->generate('a child in the forest', '1536x1024', [$reference], 'test');
 
-        $this->assertSame(base64_decode(self::PNG_BASE64), $bytes);
+        $this->assertSame(base64_decode(self::PNG_BASE64), $image->bytes);
+        $this->assertSame(4, $image->attempt);
 
         $sentUrls = Http::recorded()
             ->map(fn (array $pair): string => $pair[0]->url())
