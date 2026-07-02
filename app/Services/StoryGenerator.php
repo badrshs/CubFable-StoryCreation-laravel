@@ -112,8 +112,9 @@ class StoryGenerator
 
             // One canonical stylized rendition of the hero. The cover and
             // every page copy it, so the photo-to-illustration jump happens
-            // once here instead of independently on every image.
-            $anchor = $this->prepareHeroSheet($book, $main);
+            // once here instead of independently on every image. In photo
+            // mode the original upload leads instead and no sheet is made.
+            $anchor = $this->anchorsWithSheet($main) ? $this->prepareHeroSheet($book, $main) : null;
 
             // Cover (generated WITH the title; the decorative frame is added in the UI)
             $this->storeCover($book, $main, $anchor);
@@ -151,7 +152,7 @@ class StoryGenerator
                 throw new RuntimeException('Book has no characters');
             }
 
-            $this->storePageIllustration($page, $book, $cast, $main, $this->anchorFor($book));
+            $this->storePageIllustration($page, $book, $cast, $main, $this->anchorsWithSheet($main) ? $this->anchorFor($book) : null);
         } catch (Throwable $exception) {
             Log::error("Failed to regenerate page {$page->id}: {$exception->getMessage()}");
             $page->update(['status' => PageStatus::Failed]);
@@ -178,7 +179,7 @@ class StoryGenerator
                 throw new RuntimeException('Book has no characters');
             }
 
-            $this->storeCover($book, $main, $this->anchorFor($book));
+            $this->storeCover($book, $main, $this->anchorsWithSheet($main) ? $this->anchorFor($book) : null);
             $book->update(['cover_status' => null]);
         } catch (Throwable $exception) {
             Log::error("Failed to regenerate cover for book {$book->id}: {$exception->getMessage()}");
@@ -362,6 +363,18 @@ Exactly one character and nothing else in the frame. The character fills most of
 PROMPT;
 
         return $this->safeImages->generate($prompt, '1024x1536', $references, 'character sheet', new PromptLogContext($book->id, 'character-sheet'));
+    }
+
+    /**
+     * Whether the hero's identity anchors on a generated character sheet.
+     * In photo mode the original upload is the reference instead, so a
+     * sheet is only worth making when there is no photo to lean on.
+     */
+    private function anchorsWithSheet(Character $main): bool
+    {
+        $preference = strtolower(trim((string) config('cubfable.ai.identity_reference', 'sheet')));
+
+        return ! ($preference === 'photo' && $this->hasUsablePhoto($main));
     }
 
     /**

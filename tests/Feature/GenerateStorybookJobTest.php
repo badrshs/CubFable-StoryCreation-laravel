@@ -183,6 +183,56 @@ class GenerateStorybookJobTest extends TestCase
         $this->assertSame($sheetPath, $book->refresh()->hero_sheet_path);
     }
 
+    public function test_photo_mode_references_the_original_upload_and_skips_the_sheet(): void
+    {
+        config()->set('cubfable.ai.identity_reference', 'photo');
+
+        $book = $this->pendingBookWithCast();
+
+        // Give the hero a real stored photo.
+        $hero = $book->characters()->first();
+        Storage::disk('public')->put("characters/{$hero->id}/photo-test1234.jpg", (string) base64_decode(self::PNG_BASE64, true));
+        $hero->update(['photo_path' => "characters/{$hero->id}/photo-test1234.jpg"]);
+
+        Http::fake([
+            'api.openai.com/v1/chat/completions' => Http::response($this->storyChatResponse()),
+            'api.openai.com/v1/images/edits' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+        ]);
+
+        (new GenerateStorybookJob($book->id))->handle(app(StoryGenerator::class));
+
+        $book->refresh();
+        $this->assertSame(BookStatus::Complete, $book->status);
+
+        // No character sheet in photo mode; the upload is the anchor.
+        $this->assertNull($book->hero_sheet_path);
+        $this->assertNull($book->hero_sheet_prompt);
+
+        // Cover + 3 pages, every one on the edits endpoint (photo attached).
+        $this->assertSame(4, ImagePrompt::query()->where('book_id', $book->id)->where('accepted', true)->count());
+        $this->assertSame(4, Http::recorded(fn (Request $request): bool => str_contains($request->url(), 'images/edits'))->count());
+        $this->assertSame(0, Http::recorded(fn (Request $request): bool => str_contains($request->url(), 'images/generations'))->count());
+    }
+
+    public function test_photo_mode_still_builds_a_sheet_when_there_is_no_photo(): void
+    {
+        config()->set('cubfable.ai.identity_reference', 'photo');
+
+        $book = $this->pendingBookWithCast();
+
+        Http::fake([
+            'api.openai.com/v1/chat/completions' => Http::response($this->storyChatResponse()),
+            'api.openai.com/v1/images/generations' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+            'api.openai.com/v1/images/edits' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+        ]);
+
+        (new GenerateStorybookJob($book->id))->handle(app(StoryGenerator::class));
+
+        $book->refresh();
+        $this->assertSame(BookStatus::Complete, $book->status);
+        $this->assertNotNull($book->hero_sheet_path);
+    }
+
     public function test_the_job_bails_when_the_book_is_not_pending(): void
     {
         $book = $this->pendingBookWithCast();

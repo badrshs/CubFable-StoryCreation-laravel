@@ -27,16 +27,18 @@ class TemplateSeederTest extends TestCase
         $this->assertSame(126, Template::query()->count());
     }
 
-    public function test_reseeding_preserves_a_runtime_generated_cover(): void
+    public function test_reseeding_syncs_covers_back_to_the_checked_in_art(): void
     {
         $this->seed(TemplateSeeder::class);
 
         $template = Template::query()->where('title', 'The Whispering Forest')->firstOrFail();
-        $template->update(['cover_image_url' => 'https://example.com/runtime-cover.png']);
+        $template->update(['cover_image_url' => 'https://example.com/manual-override.png']);
 
         $this->seed(TemplateSeeder::class);
 
-        $this->assertSame('https://example.com/runtime-cover.png', $template->fresh()->cover_image_url);
+        // Covers are seed-owned now: re-seeding always recomputes them so
+        // newly checked-in real art syncs automatically.
+        $this->assertSame('/images/templates/the-whispering-forest.jpg', $template->fresh()->cover_image_url);
     }
 
     public function test_reseeding_refreshes_seed_owned_fields(): void
@@ -56,14 +58,25 @@ class TemplateSeederTest extends TestCase
         $this->assertSame(6, $template->page_count);
     }
 
-    public function test_covers_are_base64_encoded_svg_data_urls(): void
+    public function test_covers_are_checked_in_art_or_svg_placeholders(): void
     {
         $this->seed(TemplateSeeder::class);
 
         Template::query()->each(function (Template $template) {
-            $this->assertStringStartsWith('data:image/svg+xml;base64,', $template->cover_image_url);
+            $cover = $template->cover_image_url;
 
-            $svg = base64_decode(Str::after($template->cover_image_url, 'base64,'), true);
+            if (str_starts_with($cover, '/images/templates/')) {
+                $this->assertFileExists(
+                    public_path(ltrim($cover, '/')),
+                    "Checked-in cover for [{$template->title}] is missing on disk.",
+                );
+
+                return;
+            }
+
+            $this->assertStringStartsWith('data:image/svg+xml;base64,', $cover);
+
+            $svg = base64_decode(Str::after($cover, 'base64,'), true);
 
             $this->assertNotFalse($svg, "Cover for [{$template->title}] is not valid base64.");
             $this->assertStringStartsWith('<svg xmlns="http://www.w3.org/2000/svg"', $svg);

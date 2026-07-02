@@ -66,10 +66,19 @@ return [
         /*
          * Some image models cap how many reference images a request may
          * carry (Grok Imagine accepts 3). 0 means unlimited. References are
-         * ordered most-important-first (character sheet, then the hero's
-         * photo), so truncation drops the least important ones.
+         * ordered most-important-first, so truncation drops the least
+         * important ones.
          */
         'max_image_references' => (int) env('IMAGE_MAX_REFERENCES', 0),
+
+        /*
+         * What anchors the hero's identity on cover/page images:
+         * - sheet: generate one stylized character sheet from the photo and
+         *   reference it everywhere (one photo-to-illustration jump).
+         * - photo: reference the original uploaded photo directly on every
+         *   image; the character sheet step is skipped when a photo exists.
+         */
+        'identity_reference' => env('IMAGE_IDENTITY_REFERENCE', 'sheet'),
 
         'openai_base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
     ],
