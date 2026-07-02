@@ -5,6 +5,7 @@ use App\Http\Controllers\BookController;
 use App\Http\Controllers\BookDownloadController;
 use App\Http\Controllers\CharacterController;
 use App\Http\Controllers\CheckoutController;
+use App\Http\Controllers\DebugPromptController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\StripeWebhookController;
@@ -40,6 +41,9 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('characters/{id}', [CharacterController::class, 'destroy'])->whereNumber('id')->name('characters.destroy');
 
     Route::get('account', AccountController::class)->name('account');
+
+    // Dev-only prompt inspection (404s in production).
+    Route::get('_debug/books/{id}/prompts', DebugPromptController::class)->whereNumber('id')->name('debug.book-prompts');
 });
 
 Route::post('webhooks/stripe', StripeWebhookController::class)->name('webhooks.stripe');

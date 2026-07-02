@@ -8,6 +8,7 @@ use App\Jobs\GenerateStorybookJob;
 use App\Models\AiUsage;
 use App\Models\Book;
 use App\Models\Character;
+use App\Models\ImagePrompt;
 use App\Models\Page;
 use App\Models\Template;
 use App\Models\User;
@@ -58,6 +59,16 @@ class GenerateStorybookJobTest extends TestCase
         // Every generated image persists the prompt that produced it.
         $this->assertStringContainsString('FRONT COVER', (string) $book->cover_prompt);
         $this->assertStringContainsString('Character reference sheet', (string) $book->hero_sheet_prompt);
+
+        // ... and every attempt is journaled (first attempts all succeed here).
+        $journal = ImagePrompt::query()->where('book_id', $book->id)->get();
+        $this->assertCount(5, $journal);
+        $this->assertTrue($journal->every(fn (ImagePrompt $p): bool => $p->accepted && $p->attempt === 1 && $p->variant === 'original'));
+        $this->assertSame(
+            ['character-sheet' => 1, 'cover' => 1, 'page' => 3],
+            $journal->countBy('purpose')->sortKeys()->all(),
+        );
+        $this->assertCount(3, $journal->where('purpose', 'page')->pluck('page_id')->filter()->unique());
 
         $pages = $book->pages()->get();
         $this->assertCount(3, $pages);

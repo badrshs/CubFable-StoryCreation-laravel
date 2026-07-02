@@ -2,6 +2,7 @@
 
 namespace App\Services\AI;
 
+use App\Models\ImagePrompt;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -26,7 +27,7 @@ class SafeImageGenerator
     /**
      * @param  list<ImageReference>  $references
      */
-    public function generate(string $prompt, string $size, array $references = [], string $label = 'image'): GeneratedImage
+    public function generate(string $prompt, string $size, array $references = [], string $label = 'image', ?PromptLogContext $log = null): GeneratedImage
     {
         $rephrased = null;
         $getRephrased = function () use (&$rephrased, $prompt): string {
@@ -45,12 +46,17 @@ class SafeImageGenerator
         foreach ($attempts as $index => $attempt) {
             try {
                 $effectivePrompt = ($attempt['getPrompt'])();
+                $journal = $this->journalAttempt($log, $index + 1, $attempt['desc'], $effectivePrompt);
 
-                return new GeneratedImage(
+                $image = new GeneratedImage(
                     bytes: $this->ai->generateImage($effectivePrompt, $size, $attempt['refs']),
                     prompt: $effectivePrompt,
                     attempt: $index + 1,
                 );
+
+                $this->markAccepted($journal);
+
+                return $image;
             } catch (Throwable $exception) {
                 $lastException = $exception;
 
@@ -64,6 +70,46 @@ class SafeImageGenerator
         }
 
         throw $lastException;
+    }
+
+    /**
+     * Journal one attempt to image_prompts. Never lets a bookkeeping failure
+     * break generation.
+     */
+    private function journalAttempt(?PromptLogContext $log, int $attempt, string $variant, string $prompt): ?ImagePrompt
+    {
+        if ($log === null) {
+            return null;
+        }
+
+        try {
+            return ImagePrompt::query()->create([
+                'book_id' => $log->bookId,
+                'page_id' => $log->pageId,
+                'purpose' => $log->purpose,
+                'attempt' => $attempt,
+                'variant' => $variant,
+                'prompt' => $prompt,
+                'accepted' => false,
+            ]);
+        } catch (Throwable $exception) {
+            Log::warning("Failed to journal an image prompt: {$exception->getMessage()}");
+
+            return null;
+        }
+    }
+
+    private function markAccepted(?ImagePrompt $journal): void
+    {
+        if ($journal === null) {
+            return;
+        }
+
+        try {
+            $journal->update(['accepted' => true]);
+        } catch (Throwable $exception) {
+            Log::warning("Failed to mark an image prompt accepted: {$exception->getMessage()}");
+        }
     }
 
     /**

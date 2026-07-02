@@ -2,8 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Models\Book;
+use App\Models\ImagePrompt;
+use App\Models\Template;
+use App\Models\User;
 use App\Services\AI\ImageReference;
+use App\Services\AI\PromptLogContext;
 use App\Services\AI\SafeImageGenerator;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -11,6 +17,8 @@ use Tests\TestCase;
 
 class SafeImageGeneratorTest extends TestCase
 {
+    use RefreshDatabase;
+
     private const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
     protected function setUp(): void
@@ -48,6 +56,39 @@ class SafeImageGeneratorTest extends TestCase
         $this->assertSame('A rewritten storybook prompt', $imagePrompts[2]);
 
         Http::assertSentCount(4);
+    }
+
+    public function test_every_attempt_is_journaled_with_the_accepted_one_flagged(): void
+    {
+        $user = User::factory()->create();
+        $template = Template::factory()->create();
+        $book = Book::factory()->pending()->for($user)->for($template)->create();
+
+        Http::fake([
+            'api.openai.com/v1/chat/completions' => Http::response($this->chatResponse('A rewritten storybook prompt')),
+            'api.openai.com/v1/images/generations' => Http::sequence()
+                ->push(['error' => ['message' => 'content policy violation']], 400)
+                ->push(['error' => ['message' => 'content policy violation']], 400)
+                ->push(['data' => [['b64_json' => self::PNG_BASE64]]]),
+        ]);
+
+        app(SafeImageGenerator::class)->generate(
+            'a child in the forest',
+            '1536x1024',
+            [],
+            'test',
+            new PromptLogContext($book->id, 'cover'),
+        );
+
+        $journal = ImagePrompt::query()->where('book_id', $book->id)->orderBy('id')->get();
+
+        $this->assertCount(3, $journal);
+        $this->assertSame(['original', 'scrubbed', 'ai-rephrased'], $journal->pluck('variant')->all());
+        $this->assertSame([false, false, true], $journal->pluck('accepted')->all());
+        // The untouched original prompt is always the first row.
+        $this->assertSame('a child in the forest', $journal->first()->prompt);
+        $this->assertSame('cover', $journal->first()->purpose);
+        $this->assertNull($journal->first()->page_id);
     }
 
     public function test_api_key_errors_fail_fast_without_retries(): void

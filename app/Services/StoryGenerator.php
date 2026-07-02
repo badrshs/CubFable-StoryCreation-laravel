@@ -13,6 +13,7 @@ use App\Services\AI\AiManager;
 use App\Services\AI\AppearanceDescriber;
 use App\Services\AI\GeneratedImage;
 use App\Services\AI\ImageReference;
+use App\Services\AI\PromptLogContext;
 use App\Services\AI\SafeImageGenerator;
 use App\Services\AI\UsageCollector;
 use Illuminate\Database\Eloquent\Collection;
@@ -360,7 +361,7 @@ A single full-body illustration of {$main->name} standing and facing the viewer 
 Exactly one character and nothing else in the frame. The character fills most of the frame so the face, hair, skin tone, outfit, colors and shoes are all clearly visible. No text, letters, numbers, labels, borders or logos anywhere.
 PROMPT;
 
-        return $this->safeImages->generate($prompt, '1024x1536', $references, 'character sheet');
+        return $this->safeImages->generate($prompt, '1024x1536', $references, 'character sheet', new PromptLogContext($book->id, 'character-sheet'));
     }
 
     /**
@@ -447,11 +448,14 @@ PROMPT;
     /**
      * @param  Collection<int, Character>  $cast
      */
-    private function generatePageImage(string $sceneText, string $matchText, int $pageNumber, Book $book, Collection $cast, Character $main, ?ImageReference $anchor = null): GeneratedImage
+    private function generatePageImage(Page $page, Book $book, Collection $cast, Character $main, ?ImageReference $anchor = null): GeneratedImage
     {
-        ['prompt' => $prompt, 'references' => $references] = $this->buildScene($book, "page {$pageNumber}", $sceneText, $matchText, $cast, $main, $anchor);
+        $sceneText = ($page->scene ?? '') !== '' ? (string) $page->scene : $page->text;
+        $matchText = ($page->scene ?? '').' '.$page->text;
 
-        return $this->safeImages->generate($prompt, '1536x1024', $references, "page {$pageNumber}");
+        ['prompt' => $prompt, 'references' => $references] = $this->buildScene($book, "page {$page->page_number}", $sceneText, $matchText, $cast, $main, $anchor);
+
+        return $this->safeImages->generate($prompt, '1536x1024', $references, "page {$page->page_number}", new PromptLogContext($book->id, 'page', $page->id));
     }
 
     /**
@@ -493,7 +497,7 @@ Below the title, {$main->name}{$photoNote} as the central hero, in a {$book->the
 Leave a small clean margin around the edges (a decorative frame is added separately - do NOT draw a border yourself). Warm, magical, richly detailed, with the title clearly readable at the top. Spell the title exactly as written; do not add any other words or letters.
 PROMPT;
 
-        return $this->safeImages->generate($coverPrompt, '1024x1536', $coverReferences, 'cover');
+        return $this->safeImages->generate($coverPrompt, '1024x1536', $coverReferences, 'cover', new PromptLogContext($book->id, 'cover'));
     }
 
     /**
@@ -523,10 +527,7 @@ PROMPT;
      */
     private function storePageIllustration(Page $page, Book $book, Collection $cast, Character $main, ?ImageReference $anchor = null): void
     {
-        $sceneText = ($page->scene ?? '') !== '' ? (string) $page->scene : $page->text;
-        $matchText = ($page->scene ?? '').' '.$page->text;
-
-        $image = $this->generatePageImage($sceneText, $matchText, $page->page_number, $book, $cast, $main, $anchor);
+        $image = $this->generatePageImage($page, $book, $cast, $main, $anchor);
         $path = sprintf('books/%d/pages/%d-%s.png', $book->id, $page->page_number, Str::lower(Str::random(8)));
 
         $this->images->storeGenerated($image->bytes, $path);
