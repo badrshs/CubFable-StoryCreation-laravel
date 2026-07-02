@@ -51,6 +51,12 @@ class OpenRouterProvider implements AiProvider
     {
         $model = (string) config('cubfable.ai.models.image.openrouter');
 
+        $maxReferences = (int) config('cubfable.ai.max_image_references', 0);
+
+        if ($maxReferences > 0 && count($references) > $maxReferences) {
+            $references = array_slice($references, 0, $maxReferences);
+        }
+
         $content = $references === []
             ? $prompt
             : [
@@ -61,12 +67,21 @@ class OpenRouterProvider implements AiProvider
                 ),
             ];
 
-        $response = Http::timeout(180)->withHeaders($this->headers())->post(self::URL, [
+        $payload = [
             'model' => $model,
             'messages' => [['role' => 'user', 'content' => $content]],
             'modalities' => ['image', 'text'],
             'usage' => ['include' => true],
-        ]);
+        ];
+
+        $response = Http::timeout(180)->withHeaders($this->headers())->post(self::URL, $payload);
+
+        // Pure image models (e.g. Grok Imagine) reject a text output modality;
+        // interleaved models (e.g. Gemini) require it. Fall back automatically.
+        if ($response->status() === 404 && str_contains($response->body(), 'output modalities')) {
+            $payload['modalities'] = ['image'];
+            $response = Http::timeout(180)->withHeaders($this->headers())->post(self::URL, $payload);
+        }
 
         if ($response->failed()) {
             throw new RuntimeException("OpenRouter image error ({$response->status()}): {$response->body()}");

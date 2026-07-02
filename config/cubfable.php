@@ -55,6 +55,14 @@ return [
             'openrouter' => env('OPENROUTER_API_KEY', ''),
         ],
 
+        /*
+         * Some image models cap how many reference images a request may
+         * carry (Grok Imagine accepts 3). 0 means unlimited. References are
+         * ordered most-important-first (character sheet, then the hero's
+         * photo), so truncation drops the least important ones.
+         */
+        'max_image_references' => (int) env('IMAGE_MAX_REFERENCES', 0),
+
         'openai_base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
     ],
 
