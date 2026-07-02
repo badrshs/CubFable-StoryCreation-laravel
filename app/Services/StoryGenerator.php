@@ -383,16 +383,24 @@ PROMPT;
     /**
      * How many reference images can actually travel with one request, so
      * prompts only describe characters whose reference cannot be sent.
-     * The flow gateway carries exactly one; other providers follow the
-     * configurable cap (0 = unlimited).
+     * The flow gateway carries exactly one and Grok Imagine three; other
+     * providers follow the configurable cap (0 = unlimited).
      */
     private function referenceBudget(): int
     {
-        if ((string) config('cubfable.ai.image_provider') === 'flow') {
+        $provider = (string) config('cubfable.ai.image_provider');
+
+        if ($provider === 'flow') {
             return 1;
         }
 
-        return (int) config('cubfable.ai.max_image_references', 0);
+        $cap = (int) config('cubfable.ai.max_image_references', 0);
+
+        if ($provider === 'grok') {
+            return $cap > 0 ? min($cap, 3) : 3;
+        }
+
+        return $cap;
     }
 
     /**

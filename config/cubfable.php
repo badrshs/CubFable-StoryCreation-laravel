@@ -47,6 +47,7 @@ return [
                 'gemini' => env('IMAGE_MODEL_GEMINI', 'gemini-2.5-flash-image'),
                 'openrouter' => env('IMAGE_MODEL_OPENROUTER', 'google/gemini-2.5-flash-image'),
                 'flow' => env('IMAGE_MODEL_FLOW', 'grok-imagine'),
+                'grok' => env('IMAGE_MODEL_GROK', 'grok-imagine-image'),
             ],
         ],
 
@@ -55,7 +56,13 @@ return [
             'gemini' => env('GEMINI_API_KEY', ''),
             'openrouter' => env('OPENROUTER_API_KEY', ''),
             'flow' => env('FLOW_IMAGE_API_KEY', ''),
+            'grok' => env('XAI_API_KEY', ''),
         ],
+
+        /*
+         * xAI's native Grok Imagine API (images only): IMAGE_PROVIDER=grok.
+         */
+        'grok_base_url' => env('XAI_BASE_URL', 'https://api.x.ai/v1'),
 
         /*
          * The local flow-image gateway (browser-driven Grok Imagine or Google

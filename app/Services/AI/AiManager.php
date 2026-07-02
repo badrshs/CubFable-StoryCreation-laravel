@@ -5,6 +5,7 @@ namespace App\Services\AI;
 use App\Services\AI\Contracts\AiProvider;
 use App\Services\AI\Providers\FlowImageProvider;
 use App\Services\AI\Providers\GeminiProvider;
+use App\Services\AI\Providers\GrokProvider;
 use App\Services\AI\Providers\OpenAiProvider;
 use App\Services\AI\Providers\OpenRouterProvider;
 use Illuminate\Contracts\Container\Container;
@@ -52,6 +53,7 @@ class AiManager
             'gemini' => $this->container->make(GeminiProvider::class),
             'openrouter' => $this->container->make(OpenRouterProvider::class),
             'flow' => $this->container->make(FlowImageProvider::class),
+            'grok' => $this->container->make(GrokProvider::class),
             default => $this->container->make(OpenAiProvider::class),
         };
     }
