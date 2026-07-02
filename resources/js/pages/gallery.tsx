@@ -9,7 +9,6 @@ import {
     Plus,
     RefreshCw,
     Sparkles,
-    Wand2,
 } from 'lucide-react';
 import type { MouseEvent, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
@@ -23,16 +22,34 @@ import checkoutRoutes from '@/routes/checkout';
 import templateRoutes from '@/routes/templates';
 import type { Book } from '@/types';
 
-// The gallery also receives the async cover-regeneration state so a redraw
-// queued on a previous visit still veils the cover.
-type GalleryBook = Book & { coverStatus: string | null };
+// The gallery receives the async cover-redraw state plus live page progress
+// so a book being woven can show exactly how far along it is.
+type GalleryBook = Book & {
+    coverStatus: string | null;
+    pagesTotal: number;
+    pagesDone: number;
+};
 
 type GalleryProps = {
     books: GalleryBook[];
 };
 
-// A book that is still being written/drawn shows a gentle "in progress" state.
+// A book that is still being written/drawn shows the weaving treatment.
 const IN_PROGRESS: ReadonlyArray<Book['status']> = ['pending', 'generating'];
+
+// Four keepsakes per shelf; narrower screens scroll each shelf sideways,
+// which is how one browses a real bookcase.
+const SHELF_SIZE = 4;
+
+function chunk<T>(items: T[], size: number): T[][] {
+    const rows: T[][] = [];
+
+    for (let i = 0; i < items.length; i += size) {
+        rows.push(items.slice(i, i + size));
+    }
+
+    return rows;
+}
 
 // Kind, on-brand status wording. Colors come from tokens so both themes read
 // intentionally (no hard-coded light-only palette).
@@ -75,7 +92,7 @@ function StatusBadge({ status }: { status: Book['status'] }) {
 
     return (
         <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-display text-[11px] font-semibold tracking-wide ${c.className}`}
+            className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 font-display text-[10px] font-semibold tracking-wide ${c.className}`}
         >
             {c.icon}
             {c.label}
@@ -83,21 +100,110 @@ function StatusBadge({ status }: { status: Book['status'] }) {
     );
 }
 
-// The starlit ledge each keepsake rests on: a slim luminous shelf with a
-// grounded glow, replacing the old wooden plank with a twilight-world object.
-function StarShelf() {
+// The soft golden ribbon that replaces the old full-cover veil: the artwork
+// stays visible, and a slim caption + progress thread sits along the book's
+// bottom edge like a woven bookmark.
+function WeavingRibbon({
+    icon,
+    caption,
+    percent,
+}: {
+    icon: ReactNode;
+    caption: string;
+    percent: number | null;
+}) {
     return (
-        <div className="relative mt-3 h-px w-full" aria-hidden>
-            <div className="h-px w-full bg-gradient-to-r from-transparent via-gold/60 to-transparent" />
-            <div className="mx-auto h-4 w-4/5 rounded-b-full bg-primary/25 blur-md dark:bg-black/40" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 overflow-hidden rounded-l-[3px] rounded-r-[6px]">
+            <div className="bg-gradient-to-t from-black/80 via-black/45 to-transparent px-3 pt-7 pb-2.5 text-white">
+                <p className="flex items-center gap-1.5 font-display text-[11px] leading-tight font-semibold">
+                    {icon}
+                    <span className="truncate">{caption}</span>
+                </p>
+                <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/20">
+                    {percent === null ? (
+                        <div className="h-full w-full animate-shimmer [background-image:linear-gradient(90deg,transparent_20%,hsl(var(--gold))_50%,transparent_80%)] bg-[length:220%_100%]" />
+                    ) : (
+                        <div
+                            className="h-full rounded-full bg-gold transition-[width] duration-700 ease-out"
+                            style={{ width: `${Math.max(percent, 4)}%` }}
+                        />
+                    )}
+                </div>
+            </div>
         </div>
     );
 }
 
-// One keepsake in the library: its cover in a glowing niche, a live status,
-// and a gold "redraw the cover" affordance revealed on hover/focus. Each book
-// owns its own regeneration state.
-function ShelfBook({ book, index }: { book: GalleryBook; index: number }) {
+// A gentle golden shimmer sweeping across the book face while its art is
+// being (re)drawn - light moving over the cover, not a box hiding it.
+function ShimmerSweep() {
+    return (
+        <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 animate-shimmer rounded-l-[3px] rounded-r-[6px] [background-image:linear-gradient(105deg,transparent_38%,hsl(var(--gold)/0.18)_50%,transparent_62%)] bg-[length:220%_100%]"
+        />
+    );
+}
+
+// Before the cover exists there is nothing to veil: show the book being
+// woven instead - a linen blank with sparkles, a shimmer of lamplight and
+// the live page-progress thread.
+function LoomBook({
+    caption,
+    percent,
+}: {
+    caption: string;
+    percent: number | null;
+}) {
+    return (
+        <div className="group/book relative">
+            <div
+                className="relative aspect-[3/4] w-full overflow-hidden rounded-l-[3px] rounded-r-[6px] border border-card-border bg-gradient-to-br from-card via-secondary/60 to-card"
+                style={{
+                    boxShadow:
+                        '2px 0 0 hsl(var(--card-border)), 4px 0 0 hsl(var(--card)), 14px 18px 26px -12px rgba(28,18,6,0.4)',
+                }}
+            >
+                {/* Cloth binding down the spine, echoing the finished books */}
+                <div className="absolute inset-y-0 left-0 w-[6%] bg-gradient-to-r from-black/15 to-transparent" />
+                <div className="pointer-events-none absolute inset-[7px] rounded-[3px] border border-gold/25" />
+
+                <div className="flex h-full w-full items-center justify-center">
+                    <span className="flex h-14 w-14 items-center justify-center rounded-full bg-gold/10 text-gold">
+                        <Sparkles className="h-7 w-7 animate-float" />
+                    </span>
+                </div>
+
+                <ShimmerSweep />
+                <WeavingRibbon
+                    icon={<Sparkles className="h-3 w-3 text-gold" />}
+                    caption={caption}
+                    percent={percent}
+                />
+            </div>
+        </div>
+    );
+}
+
+// The shelf plank itself: a lit gold edge, a grained wooden face and the
+// soft shadow the books cast beneath it.
+function ShelfPlank() {
+    return (
+        <div
+            aria-hidden
+            className="absolute inset-x-0 bottom-16 z-0 h-5 select-none"
+        >
+            <div className="h-[3px] w-full rounded-full bg-gradient-to-r from-shelf-edge/20 via-gold/50 to-shelf-edge/20" />
+            <div className="relative h-[14px] rounded-b-[5px] bg-gradient-to-b from-shelf-edge via-shelf to-shelf shadow-[0_12px_20px_-8px_rgba(15,8,30,0.5)]">
+                <div className="absolute inset-0 rounded-b-[5px] [background-image:repeating-linear-gradient(90deg,rgba(0,0,0,0.18)_0px,rgba(0,0,0,0.18)_1px,transparent_1px,transparent_11px)] opacity-35" />
+            </div>
+            <div className="mx-8 mt-0.5 h-2 rounded-full bg-black/20 blur-md dark:bg-black/45" />
+        </div>
+    );
+}
+
+// One keepsake standing on the shelf, with its shelf-edge label underneath.
+function ShelfBook({ book }: { book: GalleryBook }) {
     const t = useT();
     const [regenerating, setRegenerating] = useState(false);
 
@@ -124,11 +230,27 @@ function ShelfBook({ book, index }: { book: GalleryBook; index: number }) {
         );
     };
 
-    const inProgress = IN_PROGRESS.includes(book.status);
+    const weaving = IN_PROGRESS.includes(book.status);
     const isDraft = String(book.status) === 'draft';
+    const hasCover = book.coverImageUrl !== null;
+
+    const percent =
+        book.pagesTotal > 0
+            ? Math.round((book.pagesDone / book.pagesTotal) * 100)
+            : null;
+    const weavingCaption =
+        book.pagesTotal > 0
+            ? t('gallery.weavingPage', {
+                  page: Math.min(book.pagesDone + 1, book.pagesTotal),
+                  total: book.pagesTotal,
+              })
+            : t('gallery.weavingStory');
 
     return (
-        <motion.li variants={fadeUp} className="group/card flex flex-col">
+        <motion.li
+            variants={fadeUp}
+            className="group/card z-10 flex w-36 shrink-0 snap-start flex-col sm:w-40 md:w-44"
+        >
             <Link
                 href={
                     isDraft
@@ -138,62 +260,155 @@ function ShelfBook({ book, index }: { book: GalleryBook; index: number }) {
                 aria-label={t('gallery.openStorybook', {
                     name: book.childName,
                 })}
-                className="relative block rounded-2xl focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
+                className="relative -mb-0.5 block rounded-sm focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
             >
-                {/* Soft niche glow behind the cover */}
-                <div
-                    aria-hidden
-                    className="pointer-events-none absolute -inset-2 rounded-[1.75rem] bg-gradient-to-b from-primary/10 to-transparent opacity-0 blur-lg transition-opacity duration-500 group-hover/card:opacity-100"
-                    style={{ animationDelay: `${index * 0.15}s` }}
-                />
-                <div className="relative px-1.5">
-                    <BookCover coverImageUrl={book.coverImageUrl} />
-
-                    {/* Redraw-cover affordance (hover + keyboard focus reveal) */}
-                    <button
-                        type="button"
-                        onClick={onRegenerate}
-                        disabled={redrawing}
-                        title={t('gallery.regenerateCover')}
-                        aria-label={t('gallery.regenerateCover')}
-                        className="hover:glow-gold absolute end-3 top-2 z-10 inline-flex items-center justify-center rounded-full bg-background/80 p-2 text-gold opacity-0 shadow-soft backdrop-blur-sm transition-all duration-300 group-hover/card:opacity-100 hover:bg-background focus-visible:opacity-100 disabled:cursor-wait disabled:opacity-100"
+                {weaving && !hasCover ? (
+                    <LoomBook caption={weavingCaption} percent={percent} />
+                ) : (
+                    <div
+                        className={`relative ${isDraft ? 'opacity-90 saturate-[0.75]' : ''}`}
                     >
-                        {redrawing ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                            <RefreshCw className="h-4 w-4" />
-                        )}
-                    </button>
+                        <BookCover coverImageUrl={book.coverImageUrl} />
 
-                    {/* While actively (re)drawing, veil the cover in twilight */}
-                    {(redrawing || inProgress) && (
-                        <div className="pointer-events-none absolute inset-0 mx-1.5 flex flex-col items-center justify-center gap-2 overflow-hidden rounded-l-[3px] rounded-r-[6px] bg-primary/70 text-primary-foreground backdrop-blur-[2px]">
-                            <Starfield count={16} aurora={false} />
-                            <Wand2 className="relative h-7 w-7 animate-float" />
-                            <span className="relative px-3 text-center font-display text-xs font-semibold">
-                                {redrawing
-                                    ? t('gallery.redrawingCover')
-                                    : t('gallery.weavingStory')}
-                            </span>
-                        </div>
-                    )}
-                </div>
+                        {/* Redraw-cover affordance (hover + keyboard focus reveal) */}
+                        {String(book.status) === 'complete' && (
+                            <button
+                                type="button"
+                                onClick={onRegenerate}
+                                disabled={redrawing}
+                                title={t('gallery.regenerateCover')}
+                                aria-label={t('gallery.regenerateCover')}
+                                className="hover:glow-gold absolute end-2 top-2 z-10 inline-flex items-center justify-center rounded-full bg-background/80 p-2 text-gold opacity-0 shadow-soft backdrop-blur-sm transition-all duration-300 group-hover/card:opacity-100 hover:bg-background focus-visible:opacity-100 disabled:cursor-wait disabled:opacity-100"
+                            >
+                                {redrawing ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <RefreshCw className="h-4 w-4" />
+                                )}
+                            </button>
+                        )}
+
+                        {/* The story is still being woven behind this cover */}
+                        {weaving && (
+                            <>
+                                <ShimmerSweep />
+                                <WeavingRibbon
+                                    icon={
+                                        <Sparkles className="h-3 w-3 text-gold" />
+                                    }
+                                    caption={weavingCaption}
+                                    percent={percent}
+                                />
+                            </>
+                        )}
+
+                        {/* The cover art is being redrawn */}
+                        {!weaving && redrawing && (
+                            <>
+                                <ShimmerSweep />
+                                <WeavingRibbon
+                                    icon={
+                                        <Loader2 className="h-3 w-3 animate-spin text-gold" />
+                                    }
+                                    caption={t('gallery.redrawingCover')}
+                                    percent={null}
+                                />
+                            </>
+                        )}
+
+                        {/* Awaiting checkout: dimmed, with a clear next step */}
+                        {isDraft && (
+                            <div className="pointer-events-none absolute inset-x-0 bottom-0 overflow-hidden rounded-l-[3px] rounded-r-[6px]">
+                                <div className="bg-gradient-to-t from-black/80 via-black/45 to-transparent px-3 pt-7 pb-2.5 text-white">
+                                    <p className="flex items-center gap-1.5 font-display text-[11px] leading-tight font-semibold">
+                                        <Moon className="h-3 w-3 text-gold" />
+                                        <span className="truncate">
+                                            {t('gallery.statusDraft')}
+                                        </span>
+                                    </p>
+                                    <p className="mt-0.5 truncate text-[10px] text-white/75">
+                                        {t('gallery.finishCheckout')}
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
             </Link>
 
-            <StarShelf />
+            {/* Plank zone spacer: the shelf runs through here */}
+            <div aria-hidden className="h-5" />
 
-            <div className="flex items-center justify-between gap-2 px-1.5 pt-3">
-                <div className="min-w-0">
-                    <p className="truncate font-serif text-lg leading-tight font-semibold text-foreground">
+            {/* Shelf-edge label */}
+            <div className="flex h-16 min-w-0 flex-col gap-0.5 pt-3">
+                <div className="flex items-center justify-between gap-2">
+                    <p className="truncate font-serif text-base leading-tight font-semibold text-foreground">
                         {book.childName}
                     </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                        {t('gallery.agesLabel', { range: book.ageRange })}
-                    </p>
+                    <StatusBadge status={book.status} />
                 </div>
-                <StatusBadge status={book.status} />
+                <p className="truncate text-xs text-muted-foreground">
+                    {t('gallery.agesLabel', { range: book.ageRange })}
+                </p>
             </div>
         </motion.li>
+    );
+}
+
+// An open slot at the end of the last shelf: the standing invitation to
+// begin the next keepsake.
+function AddTaleSlot() {
+    const t = useT();
+
+    return (
+        <li className="z-10 flex w-36 shrink-0 snap-start flex-col sm:w-40 md:w-44">
+            <Link
+                href={templateRoutes.index()}
+                className="group/slot relative -mb-0.5 block rounded-sm focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
+            >
+                <div className="flex aspect-[3/4] w-full items-center justify-center rounded-l-[3px] rounded-r-[6px] border-2 border-dashed border-gold/35 bg-gold/5 transition-colors duration-300 group-hover/slot:border-gold/60 group-hover/slot:bg-gold/10">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-gold/15 text-gold transition-transform duration-300 group-hover/slot:scale-110">
+                        <Plus className="h-6 w-6" />
+                    </span>
+                </div>
+            </Link>
+            <div aria-hidden className="h-5" />
+            <div className="flex h-16 items-start pt-3">
+                <p className="truncate font-display text-sm font-semibold text-gold-foreground dark:text-gold">
+                    {t('gallery.addAnotherTale')}
+                </p>
+            </div>
+        </li>
+    );
+}
+
+// One shelf of the bookcase: lamplight pooling from above, books standing
+// on a continuous plank, labels along the shelf edge. Narrow screens scroll
+// each shelf sideways with snap points.
+function Shelf({ books, isLast }: { books: GalleryBook[]; isLast: boolean }) {
+    return (
+        <li className="relative">
+            <div
+                aria-hidden
+                className="pointer-events-none absolute inset-x-10 top-0 h-44 bg-[radial-gradient(60%_100%_at_50%_0%,hsl(var(--gold)/0.10),transparent_70%)]"
+            />
+            <div className="[scrollbar-width:thin] overflow-x-auto pb-1">
+                <div className="relative w-max min-w-full">
+                    <motion.ol
+                        variants={staggerContainer(0.06)}
+                        initial="hidden"
+                        animate="show"
+                        className="flex snap-x items-end gap-6 px-6 pt-10 sm:px-10"
+                    >
+                        {books.map((book) => (
+                            <ShelfBook key={book.id} book={book} />
+                        ))}
+                        {isLast && <AddTaleSlot />}
+                    </motion.ol>
+                    <ShelfPlank />
+                </div>
+            </div>
+        </li>
     );
 }
 
@@ -243,7 +458,7 @@ export default function Gallery({ books }: GalleryProps) {
                     initial={reduceMotion ? false : { opacity: 0, y: 18 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6, ease: easeOutSoft }}
-                    className="mb-14 flex flex-wrap items-end justify-between gap-6"
+                    className="mb-12 flex flex-wrap items-end justify-between gap-6"
                 >
                     <div>
                         <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/10 px-3 py-1.5 font-display text-sm font-semibold text-gold-foreground dark:text-gold">
@@ -322,23 +537,38 @@ export default function Gallery({ books }: GalleryProps) {
                     </motion.div>
                 )}
 
-                {/* The library: a personal shelf of keepsakes under a twilight sky */}
+                {/* The bookcase: shelves of keepsakes under pooled lamplight */}
                 {hasBooks && (
-                    <motion.ul
-                        variants={staggerContainer(0.06)}
-                        initial={reduceMotion ? false : 'hidden'}
-                        animate="show"
-                        className="grid grid-cols-2 gap-x-6 gap-y-12 sm:grid-cols-3 lg:grid-cols-4"
+                    <motion.div
+                        initial={reduceMotion ? false : { opacity: 0, y: 14 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{
+                            duration: 0.55,
+                            ease: easeOutSoft,
+                            delay: 0.1,
+                        }}
+                        className="relative overflow-hidden rounded-[2rem] border border-card-border bg-card/40 shadow-lift backdrop-blur-sm"
                     >
-                        {books.map((book, i) => (
-                            <ShelfBook key={book.id} book={book} index={i} />
-                        ))}
-                    </motion.ul>
+                        {/* Case top rail */}
+                        <div
+                            aria-hidden
+                            className="h-2 w-full bg-gradient-to-b from-shelf-edge/80 to-shelf/60"
+                        />
+                        <ul className="space-y-2 pt-2 pb-6">
+                            {chunk(books, SHELF_SIZE).map((row, i, rows) => (
+                                <Shelf
+                                    key={row[0].id}
+                                    books={row}
+                                    isLast={i === rows.length - 1}
+                                />
+                            ))}
+                        </ul>
+                    </motion.div>
                 )}
 
                 {/* Mobile CTA */}
                 {hasBooks && (
-                    <div className="mt-14 flex justify-center sm:hidden">
+                    <div className="mt-12 flex justify-center sm:hidden">
                         <Link href={templateRoutes.index()}>
                             <Button
                                 variant="gold"

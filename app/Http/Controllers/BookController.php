@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\BookStatus;
+use App\Enums\PageStatus;
 use App\Enums\StoryLanguage;
 use App\Http\Controllers\Concerns\MapsCubfableProps;
 use App\Http\Requests\StoreBookRequest;
@@ -101,12 +102,20 @@ class BookController extends Controller
     public function index(Request $request): Response
     {
         $books = $request->user()->books()
+            ->withCount([
+                'pages as pages_total',
+                'pages as pages_done' => fn ($query) => $query->where('status', PageStatus::Complete),
+            ])
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->get();
 
         return Inertia::render('gallery', [
-            'books' => $books->map(fn (Book $book): array => $this->bookProps($book))->all(),
+            'books' => $books->map(fn (Book $book): array => [
+                ...$this->bookProps($book),
+                'pagesTotal' => (int) $book->getAttribute('pages_total'),
+                'pagesDone' => (int) $book->getAttribute('pages_done'),
+            ])->all(),
         ]);
     }
 

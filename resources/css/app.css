@@ -57,6 +57,8 @@
     --color-rose-foreground: hsl(var(--rose-foreground));
     --color-moonlit: hsl(var(--moonlit));
     --color-twilight: hsl(var(--twilight));
+    --color-shelf: hsl(var(--shelf));
+    --color-shelf-edge: hsl(var(--shelf-edge));
 
     /* Sidebar tokens (starter settings shell) mapped onto the CubFable palette */
     --color-sidebar: hsl(var(--sidebar));
@@ -137,6 +139,8 @@
     --rose-foreground: 0 0% 100%;
     --moonlit: 213 64% 74%; /* Moonlit Blue */
     --twilight: 248 63% 57%;
+    --shelf: 28 34% 40%; /* Honey-walnut shelf wood (day) */
+    --shelf-edge: 38 48% 58%;
 
     /* Sidebar (settings shell) - card-like surfaces on the day palette */
     --sidebar: 250 55% 99%;
@@ -205,6 +209,8 @@
     --rose-foreground: 245 50% 10%;
     --moonlit: 213 66% 76%;
     --twilight: 249 72% 68%;
+    --shelf: 262 22% 22%; /* Moonlit plum-walnut shelf wood (night) */
+    --shelf-edge: 264 24% 38%;
 
     --sidebar: 246 40% 16%;
     --sidebar-foreground: 250 58% 95%;
