@@ -10,6 +10,7 @@ import {
     InputOTPSlot,
 } from '@/components/ui/input-otp';
 import { OTP_MAX_LENGTH } from '@/hooks/use-two-factor-auth';
+import type { AuthLayoutProps } from '@/layouts/auth-layout';
 import { store } from '@/routes/two-factor/login';
 
 export default function TwoFactorChallenge() {
@@ -38,9 +39,10 @@ export default function TwoFactorChallenge() {
         };
     }, [showRecoveryInput]);
 
-    setLayoutProps({
+    setLayoutProps<AuthLayoutProps>({
+        eyebrow: 'Security check',
         title: authConfigContent.title,
-        description: authConfigContent.description,
+        subtitle: authConfigContent.description,
     });
 
     const toggleRecoveryMode = (clearErrors: () => void): void => {
@@ -106,7 +108,9 @@ export default function TwoFactorChallenge() {
 
                             <Button
                                 type="submit"
-                                className="w-full"
+                                variant="gold"
+                                size="lg"
+                                className="w-full rounded-full"
                                 disabled={processing}
                             >
                                 Continue

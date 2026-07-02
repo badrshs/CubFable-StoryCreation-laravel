@@ -1,0 +1,20 @@
+<?php
+
+/**
+ * Corrects TCPDF's inaccurate docblock: Polycurve() destructures each
+ * segment as a six-float control-point list at runtime, but the vendor
+ * docblock declares the parameter as a flat float array.
+ */
+class TCPDF
+{
+    /**
+     * @param  float  $x0
+     * @param  float  $y0
+     * @param  array<int, array<int, float>>  $segments
+     * @param  string  $style
+     * @param  array<string, mixed>  $line_style
+     * @param  array<int, int|float>  $fill_color
+     * @return void
+     */
+    public function Polycurve($x0, $y0, $segments, $style = '', $line_style = [], $fill_color = []) {}
+}

@@ -9,6 +9,7 @@ import PasswordInput from '@/components/password-input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import type { AuthLayoutProps } from '@/layouts/auth-layout';
 import { store } from '@/routes/password/confirm';
 
 export default function ConfirmPassword() {
@@ -28,8 +29,8 @@ export default function ConfirmPassword() {
 
             <Form {...store.form()} resetOnSuccess={['password']}>
                 {({ processing, errors }) => (
-                    <div className="space-y-6">
-                        <div className="grid gap-2">
+                    <div className="flex flex-col gap-5">
+                        <div className="flex flex-col gap-1.5">
                             <Label htmlFor="password">Password</Label>
                             <PasswordInput
                                 id="password"
@@ -44,7 +45,9 @@ export default function ConfirmPassword() {
 
                         <div className="flex items-center">
                             <Button
-                                className="w-full"
+                                variant="gold"
+                                size="lg"
+                                className="w-full rounded-full"
                                 disabled={processing}
                                 data-test="confirm-password-button"
                             >
@@ -60,7 +63,8 @@ export default function ConfirmPassword() {
 }
 
 ConfirmPassword.layout = {
+    eyebrow: 'Security check',
     title: 'Confirm password',
-    description:
+    subtitle:
         'This is a secure area of the application. Please confirm your password before continuing.',
-};
+} satisfies AuthLayoutProps;

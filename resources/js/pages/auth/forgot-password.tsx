@@ -6,6 +6,7 @@ import TextLink from '@/components/text-link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import type { AuthLayoutProps } from '@/layouts/auth-layout';
 import { login } from '@/routes';
 import { email } from '@/routes/password';
 
@@ -24,7 +25,7 @@ export default function ForgotPassword({ status }: { status?: string }) {
                 <Form {...email.form()}>
                     {({ processing, errors }) => (
                         <>
-                            <div className="grid gap-2">
+                            <div className="flex flex-col gap-1.5">
                                 <Label htmlFor="email">Email address</Label>
                                 <Input
                                     id="email"
@@ -40,7 +41,9 @@ export default function ForgotPassword({ status }: { status?: string }) {
 
                             <div className="my-6 flex items-center justify-start">
                                 <Button
-                                    className="w-full"
+                                    variant="gold"
+                                    size="lg"
+                                    className="w-full rounded-full"
                                     disabled={processing}
                                     data-test="email-password-reset-link-button"
                                 >
@@ -64,6 +67,7 @@ export default function ForgotPassword({ status }: { status?: string }) {
 }
 
 ForgotPassword.layout = {
+    eyebrow: 'Password reset',
     title: 'Forgot password',
-    description: 'Enter your email to receive a password reset link',
-};
+    subtitle: 'Enter your email to receive a password reset link',
+} satisfies AuthLayoutProps;

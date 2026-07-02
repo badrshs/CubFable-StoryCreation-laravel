@@ -1,0 +1,68 @@
+<?php
+
+namespace App\Models;
+
+use Database\Factories\CharacterFactory;
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Casts\Attribute;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
+
+/**
+ * @property int $id
+ * @property int $user_id
+ * @property string $name
+ * @property string|null $role
+ * @property string|null $description
+ * @property string|null $photo_path
+ * @property string|null $appearance
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read string|null $photo_url
+ */
+#[Fillable([
+    'user_id',
+    'name',
+    'role',
+    'description',
+    'photo_path',
+    'appearance',
+])]
+class Character extends Model
+{
+    /** @use HasFactory<CharacterFactory> */
+    use HasFactory;
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    /**
+     * @return BelongsToMany<Book, $this>
+     */
+    public function books(): BelongsToMany
+    {
+        return $this->belongsToMany(Book::class, 'book_characters')
+            ->withPivot(['is_main', 'sort_order']);
+    }
+
+    /**
+     * The public URL of the reference photo, if one exists.
+     *
+     * @return Attribute<string|null, never>
+     */
+    protected function photoUrl(): Attribute
+    {
+        return Attribute::make(get: fn (): ?string => $this->photo_path === null
+            ? null
+            : Storage::disk('public')->url($this->photo_path));
+    }
+}

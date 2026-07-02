@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import type { AuthLayoutProps } from '@/layouts/auth-layout';
 import { update } from '@/routes/password';
 
 type Props = {
@@ -24,8 +25,8 @@ export default function ResetPassword({ token, email, passwordRules }: Props) {
                 resetOnSuccess={['password', 'password_confirmation']}
             >
                 {({ processing, errors }) => (
-                    <div className="grid gap-6">
-                        <div className="grid gap-2">
+                    <div className="flex flex-col gap-5">
+                        <div className="flex flex-col gap-1.5">
                             <Label htmlFor="email">Email</Label>
                             <Input
                                 id="email"
@@ -42,7 +43,7 @@ export default function ResetPassword({ token, email, passwordRules }: Props) {
                             />
                         </div>
 
-                        <div className="grid gap-2">
+                        <div className="flex flex-col gap-1.5">
                             <Label htmlFor="password">Password</Label>
                             <PasswordInput
                                 id="password"
@@ -56,7 +57,7 @@ export default function ResetPassword({ token, email, passwordRules }: Props) {
                             <InputError message={errors.password} />
                         </div>
 
-                        <div className="grid gap-2">
+                        <div className="flex flex-col gap-1.5">
                             <Label htmlFor="password_confirmation">
                                 Confirm password
                             </Label>
@@ -76,7 +77,9 @@ export default function ResetPassword({ token, email, passwordRules }: Props) {
 
                         <Button
                             type="submit"
-                            className="mt-4 w-full"
+                            variant="gold"
+                            size="lg"
+                            className="mt-4 w-full rounded-full"
                             disabled={processing}
                             data-test="reset-password-button"
                         >
@@ -91,6 +94,7 @@ export default function ResetPassword({ token, email, passwordRules }: Props) {
 }
 
 ResetPassword.layout = {
+    eyebrow: 'Password reset',
     title: 'Reset password',
-    description: 'Please enter your new password below',
-};
+    subtitle: 'Please enter your new password below',
+} satisfies AuthLayoutProps;
