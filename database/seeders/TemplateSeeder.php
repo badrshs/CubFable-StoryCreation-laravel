@@ -4,8 +4,8 @@ namespace Database\Seeders;
 
 use App\Models\Template;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 
 /**
  * Idempotent seed for the story templates ("ideas").
@@ -49,14 +49,13 @@ class TemplateSeeder extends Seeder
         $allTemplates = array_merge($this->starterTemplates(), $this->ideaTemplates());
 
         foreach ($allTemplates as $template) {
-            $exists = Template::query()->where('title', $template['title'])->exists();
-
-            // Refresh the seed-owned content on every run, but only set
-            // cover_image_url when the row is new so a real cover generated at
-            // runtime survives re-seeding.
+            // cover_image_url is always recomputed by cover(): it picks up the
+            // checked-in real image if one exists at public/images/templates,
+            // otherwise falls back to the placeholder, so re-seeding safely
+            // syncs cover art as more real images are added over time.
             Template::query()->updateOrCreate(
                 ['title' => $template['title']],
-                $exists ? Arr::except($template, ['cover_image_url']) : $template,
+                $template,
             );
         }
     }
@@ -187,10 +186,26 @@ class TemplateSeeder extends Seeder
     }
 
     /**
+     * The real cover art if it has been generated and checked into
+     * public/images/templates/{slug}.jpg, otherwise a self-contained SVG
+     * placeholder (no network needed) until one exists.
+     */
+    private function cover(string $title, string $from, string $to): string
+    {
+        $realCover = 'images/templates/'.Str::slug($title).'.jpg';
+
+        if (File::exists(public_path($realCover))) {
+            return '/'.$realCover;
+        }
+
+        return $this->placeholderCover($title, $from, $to);
+    }
+
+    /**
      * A self-contained SVG cover (no network needed) used as a placeholder
      * until a real cover image is generated from the idea's image prompt.
      */
-    private function cover(string $title, string $from, string $to): string
+    private function placeholderCover(string $title, string $from, string $to): string
     {
         $svg = '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">'
             .'<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
