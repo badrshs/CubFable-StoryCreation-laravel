@@ -43,6 +43,7 @@ class GenerateStorybookJobTest extends TestCase
         Http::fake([
             'api.openai.com/v1/chat/completions' => Http::response($this->storyChatResponse()),
             'api.openai.com/v1/images/generations' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+            'api.openai.com/v1/images/edits' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
         ]);
 
         (new GenerateStorybookJob($book->id))->handle(app(StoryGenerator::class));
@@ -51,6 +52,8 @@ class GenerateStorybookJobTest extends TestCase
         $this->assertSame(BookStatus::Complete, $book->status);
         $this->assertNotNull($book->cover_image_path);
         Storage::disk('public')->assertExists($book->cover_image_path);
+        $this->assertNotNull($book->hero_sheet_path);
+        Storage::disk('public')->assertExists($book->hero_sheet_path);
 
         $pages = $book->pages()->get();
         $this->assertCount(3, $pages);
@@ -65,20 +68,29 @@ class GenerateStorybookJobTest extends TestCase
         $usage = AiUsage::query()->where('book_id', $book->id)->get();
         $this->assertGreaterThan(0, $usage->count());
         $this->assertSame(1, $usage->where('kind', 'text')->count());
-        $this->assertSame(4, $usage->where('kind', 'image')->count());
+        // Character sheet + cover + 3 pages.
+        $this->assertSame(5, $usage->where('kind', 'image')->count());
+
+        // The sheet itself is generated without references (no photo on the
+        // cast), while the anchored cover and pages carry it as a reference
+        // and therefore use the edits endpoint.
+        Http::assertSentCount(6);
+        $this->assertSame(1, Http::recorded(fn (Request $request): bool => str_contains($request->url(), 'images/generations'))->count());
+        $this->assertSame(4, Http::recorded(fn (Request $request): bool => str_contains($request->url(), 'images/edits'))->count());
     }
 
     public function test_image_failures_flip_pages_to_failed_but_the_book_completes(): void
     {
         $book = $this->pendingBookWithCast();
 
-        // The cover (portrait 1024x1536) succeeds; every page image (landscape) 500s.
+        // Portrait images (character sheet and cover, 1024x1536) succeed;
+        // every page image (landscape 1536x1024) 500s.
         Http::fake(function (Request $request) {
             if (str_contains($request->url(), 'chat/completions')) {
                 return Http::response($this->storyChatResponse());
             }
 
-            if (($request->data()['size'] ?? null) === '1024x1536') {
+            if ($this->requestField($request, 'size') === '1024x1536') {
                 return Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]);
             }
 
@@ -113,6 +125,46 @@ class GenerateStorybookJobTest extends TestCase
         $book->refresh();
         $this->assertSame(BookStatus::Failed, $book->status);
         $this->assertSame(0, Page::query()->where('book_id', $book->id)->count());
+    }
+
+    public function test_page_regeneration_reuses_the_stored_hero_sheet(): void
+    {
+        $user = User::factory()->create();
+        $template = Template::factory()->create(['page_count' => 1]);
+
+        $book = Book::factory()->complete()->for($user)->for($template)->create([
+            'child_name' => 'Mia',
+            'theme' => 'forest',
+        ]);
+
+        $sheetPath = "books/{$book->id}/sheet-abcd1234.png";
+        Storage::disk('public')->put($sheetPath, (string) base64_decode(self::PNG_BASE64, true));
+        $book->update(['hero_sheet_path' => $sheetPath]);
+
+        $character = Character::factory()->for($user)->create([
+            'name' => 'Mia',
+            'role' => 'self',
+            'appearance' => 'Short curly brown hair, green eyes, yellow raincoat, blue boots.',
+        ]);
+        $book->characters()->attach($character->id, ['is_main' => true, 'sort_order' => 0]);
+
+        $page = Page::factory()->for($book)->create([
+            'page_number' => 1,
+            'scene' => 'Mia waves from the mossy path.',
+            'status' => PageStatus::Generating,
+        ]);
+
+        // Only the anchored page call happens: no new sheet, no text calls.
+        Http::fake([
+            'api.openai.com/v1/images/edits' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+        ]);
+
+        app(StoryGenerator::class)->regeneratePageIllustration($page, $book);
+
+        $this->assertSame(PageStatus::Complete, $page->refresh()->status);
+        $this->assertNotNull($page->image_path);
+        Http::assertSentCount(1);
+        $this->assertSame($sheetPath, $book->refresh()->hero_sheet_path);
     }
 
     public function test_the_job_bails_when_the_book_is_not_pending(): void
@@ -157,6 +209,28 @@ class GenerateStorybookJobTest extends TestCase
         $book->characters()->attach($character->id, ['is_main' => true, 'sort_order' => 0]);
 
         return $book;
+    }
+
+    /**
+     * Read a named field from a faked request, whether it was sent as JSON
+     * or as a multipart form (the edits endpoint used when references are
+     * attached).
+     */
+    private function requestField(Request $request, string $field): ?string
+    {
+        $data = $request->data();
+
+        if (isset($data[$field]) && is_string($data[$field])) {
+            return $data[$field];
+        }
+
+        foreach ($data as $part) {
+            if (is_array($part) && ($part['name'] ?? null) === $field && is_string($part['contents'] ?? null)) {
+                return $part['contents'];
+            }
+        }
+
+        return null;
     }
 
     /**

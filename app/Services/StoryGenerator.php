@@ -108,13 +108,18 @@ class StoryGenerator
                 ]);
             }
 
+            // One canonical stylized rendition of the hero. The cover and
+            // every page copy it, so the photo-to-illustration jump happens
+            // once here instead of independently on every image.
+            $anchor = $this->prepareHeroSheet($book, $main);
+
             // Cover (generated WITH the title; the decorative frame is added in the UI)
-            $this->storeCover($book, $main);
+            $this->storeCover($book, $main, $anchor);
 
             // Pages (sequential to stay within rate limits)
             foreach ($pages as $page) {
                 try {
-                    $this->storePageIllustration($page, $book, $cast, $main);
+                    $this->storePageIllustration($page, $book, $cast, $main, $anchor);
                 } catch (Throwable $exception) {
                     Log::error("Failed to generate image for page {$page->page_number}: {$exception->getMessage()}");
                     $page->update(['status' => PageStatus::Failed]);
@@ -144,7 +149,7 @@ class StoryGenerator
                 throw new RuntimeException('Book has no characters');
             }
 
-            $this->storePageIllustration($page, $book, $cast, $main);
+            $this->storePageIllustration($page, $book, $cast, $main, $this->anchorFor($book));
         } catch (Throwable $exception) {
             Log::error("Failed to regenerate page {$page->id}: {$exception->getMessage()}");
             $page->update(['status' => PageStatus::Failed]);
@@ -171,7 +176,7 @@ class StoryGenerator
                 throw new RuntimeException('Book has no characters');
             }
 
-            $this->storeCover($book, $main);
+            $this->storeCover($book, $main, $this->anchorFor($book));
             $book->update(['cover_status' => null]);
         } catch (Throwable $exception) {
             Log::error("Failed to regenerate cover for book {$book->id}: {$exception->getMessage()}");
@@ -307,12 +312,79 @@ PROMPT;
     }
 
     /**
+     * Generate and store the hero's character sheet: one canonical stylized
+     * rendition of the main character that anchors the cover and every page.
+     * Failures are non-fatal; generation simply continues unanchored.
+     */
+    private function prepareHeroSheet(Book $book, Character $main): ?ImageReference
+    {
+        try {
+            $bytes = $this->generateHeroSheetImage($book, $main);
+            $path = sprintf('books/%d/sheet-%s.png', $book->id, Str::lower(Str::random(8)));
+
+            $this->images->storeGenerated($bytes, $path);
+
+            $previous = $book->hero_sheet_path;
+            $book->update(['hero_sheet_path' => $path]);
+
+            if ($previous !== $path) {
+                $this->images->delete($previous);
+            }
+
+            return new ImageReference($path, "{$main->name} (character sheet)");
+        } catch (Throwable $exception) {
+            Log::warning("Hero sheet generation failed for book {$book->id}, continuing without an anchor: {$exception->getMessage()}");
+
+            return $this->anchorFor($book);
+        }
+    }
+
+    private function generateHeroSheetImage(Book $book, Character $main): string
+    {
+        $artStyle = self::ART_STYLE_PROMPTS[$book->art_style] ?? self::ART_STYLE_PROMPTS['storybook'];
+        $usePhoto = $this->hasUsablePhoto($main);
+        $references = $usePhoto ? [new ImageReference((string) $main->photo_path, $main->name)] : [];
+
+        $photoNote = $usePhoto
+            ? ' Match the child in the reference photo faithfully: same face, hairstyle, hair color, skin tone, eye color and build, redrawn in the art style (an illustration, never a photo).'
+            : '';
+        $appearance = trim((string) $main->appearance);
+        $appearanceClause = $appearance !== '' ? " {$main->name}'s appearance: {$appearance}" : '';
+
+        $prompt = <<<PROMPT
+{$artStyle}. Character reference sheet for a children's picture book.
+
+A single full-body illustration of {$main->name} standing and facing the viewer in a relaxed, friendly pose, on a plain soft neutral background.{$photoNote}{$appearanceClause}
+
+Exactly one character and nothing else in the frame. The character fills most of the frame so the face, hair, skin tone, outfit, colors and shoes are all clearly visible. No text, letters, numbers, labels, borders or logos anywhere.
+PROMPT;
+
+        return $this->safeImages->generate($prompt, '1024x1536', $references, 'character sheet');
+    }
+
+    /**
+     * The stored hero sheet as an image reference, when it exists on disk.
+     * Older books generated before anchoring simply return null and keep
+     * their original behavior.
+     */
+    private function anchorFor(Book $book): ?ImageReference
+    {
+        $path = $book->hero_sheet_path;
+
+        if ($path === null || $path === '' || ! Storage::disk('public')->exists($path)) {
+            return null;
+        }
+
+        return new ImageReference($path, "{$book->child_name} (character sheet)");
+    }
+
+    /**
      * Build the per-page prompt + reference photos for the characters in a scene.
      *
      * @param  Collection<int, Character>  $cast
      * @return array{prompt: string, references: list<ImageReference>}
      */
-    private function buildScene(Book $book, string $pageNumberLabel, string $sceneText, string $matchText, Collection $cast, Character $main): array
+    private function buildScene(Book $book, string $pageNumberLabel, string $sceneText, string $matchText, Collection $cast, Character $main, ?ImageReference $anchor = null): array
     {
         $artStyle = self::ART_STYLE_PROMPTS[$book->art_style] ?? self::ART_STYLE_PROMPTS['storybook'];
 
@@ -346,6 +418,13 @@ PROMPT;
             ? "\nThe story is about {$book->subject} - reflect it in the setting, props and action wherever it fits naturally."
             : '';
 
+        $anchorNote = '';
+
+        if ($anchor !== null) {
+            array_unshift($references, $anchor);
+            $anchorNote = "\nThe FIRST reference image is the definitive character sheet for {$main->name}: copy their face, hairstyle, skin tone, outfit, colors and proportions EXACTLY as drawn there. It is already in the target art style; reproduce that exact rendition of {$main->name} in this scene.\n";
+        }
+
         $characterLines = implode("\n", $lines);
 
         $prompt = <<<PROMPT
@@ -355,7 +434,7 @@ Scene: {$sceneText}{$subjectNote}
 
 Characters in this scene (draw each EXACTLY and consistently):
 {$characterLines}
-
+{$anchorNote}
 CHARACTER CONSISTENCY IS CRITICAL: keep every character's face, hair, facial hair, skin tone, outfit and accessories identical in every scene. Never change a character's appearance between pages. Redraw any photo-referenced character in the {$book->art_style} art style (an illustration, never a photo).
 
 Style: warm, magical, safe for children, 16:9 landscape format, detailed background showing the {$book->theme} setting. No text or letters in the image. High quality illustration.
@@ -367,9 +446,9 @@ PROMPT;
     /**
      * @param  Collection<int, Character>  $cast
      */
-    private function generatePageImage(string $sceneText, string $matchText, int $pageNumber, Book $book, Collection $cast, Character $main): string
+    private function generatePageImage(string $sceneText, string $matchText, int $pageNumber, Book $book, Collection $cast, Character $main, ?ImageReference $anchor = null): string
     {
-        ['prompt' => $prompt, 'references' => $references] = $this->buildScene($book, "page {$pageNumber}", $sceneText, $matchText, $cast, $main);
+        ['prompt' => $prompt, 'references' => $references] = $this->buildScene($book, "page {$pageNumber}", $sceneText, $matchText, $cast, $main, $anchor);
 
         return $this->safeImages->generate($prompt, '1536x1024', $references, "page {$pageNumber}");
     }
@@ -379,7 +458,7 @@ PROMPT;
      * decorative gold frame is added by the UI (BookCover), so the prompt asks
      * for a clean margin and no border.
      */
-    private function generateCoverImage(Book $book, Character $main): string
+    private function generateCoverImage(Book $book, Character $main, ?ImageReference $anchor = null): string
     {
         $artStyle = self::ART_STYLE_PROMPTS[$book->art_style] ?? self::ART_STYLE_PROMPTS['storybook'];
         $usePhotoCover = $this->hasUsablePhoto($main);
@@ -389,6 +468,12 @@ PROMPT;
         $photoNote = $usePhotoCover
             ? ', the child shown in the reference photo (keep their face, hair and outfit clearly recognizable but redrawn in the art style, never a photograph)'
             : '';
+        $anchorClause = '';
+
+        if ($anchor !== null) {
+            array_unshift($coverReferences, $anchor);
+            $anchorClause = " The FIRST reference image is the definitive character sheet for {$main->name}: copy their face, hairstyle, skin tone, outfit and colors exactly as drawn there.";
+        }
         $subjectClause = $book->subject !== ''
             ? ", with the story's subject ({$book->subject}) clearly featured in the scene"
             : '';
@@ -402,7 +487,7 @@ TITLE TEXT (render it directly in the artwork at the top, beautifully and spelle
   - First line: "{$main->name}" as large, flowing, golden hand-lettered script.
   - Second line: "{$coverSubtitle}" in a smaller elegant classic serif.
 
-Below the title, {$main->name}{$photoNote} as the central hero, in a {$book->theme} setting{$subjectClause}.{$appearanceClause}
+Below the title, {$main->name}{$photoNote} as the central hero, in a {$book->theme} setting{$subjectClause}.{$appearanceClause}{$anchorClause}
 
 Leave a small clean margin around the edges (a decorative frame is added separately - do NOT draw a border yourself). Warm, magical, richly detailed, with the title clearly readable at the top. Spell the title exactly as written; do not add any other words or letters.
 PROMPT;
@@ -414,9 +499,9 @@ PROMPT;
      * Generate and store the cover (1024x1536 portrait), replacing any
      * previous file.
      */
-    private function storeCover(Book $book, Character $main): void
+    private function storeCover(Book $book, Character $main, ?ImageReference $anchor = null): void
     {
-        $bytes = $this->generateCoverImage($book, $main);
+        $bytes = $this->generateCoverImage($book, $main, $anchor);
         $path = sprintf('books/%d/cover-%s.png', $book->id, Str::lower(Str::random(8)));
 
         $this->images->storeGenerated($bytes, $path);
@@ -435,12 +520,12 @@ PROMPT;
      *
      * @param  Collection<int, Character>  $cast
      */
-    private function storePageIllustration(Page $page, Book $book, Collection $cast, Character $main): void
+    private function storePageIllustration(Page $page, Book $book, Collection $cast, Character $main, ?ImageReference $anchor = null): void
     {
         $sceneText = ($page->scene ?? '') !== '' ? (string) $page->scene : $page->text;
         $matchText = ($page->scene ?? '').' '.$page->text;
 
-        $bytes = $this->generatePageImage($sceneText, $matchText, $page->page_number, $book, $cast, $main);
+        $bytes = $this->generatePageImage($sceneText, $matchText, $page->page_number, $book, $cast, $main, $anchor);
         $path = sprintf('books/%d/pages/%d-%s.png', $book->id, $page->page_number, Str::lower(Str::random(8)));
 
         $this->images->storeGenerated($bytes, $path);

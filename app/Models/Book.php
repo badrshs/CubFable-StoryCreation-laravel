@@ -29,6 +29,7 @@ use Illuminate\Support\Facades\Storage;
  * @property BookStatus $status
  * @property string|null $cover_image_path
  * @property string|null $cover_status
+ * @property string|null $hero_sheet_path
  * @property Carbon|null $paid_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -48,6 +49,7 @@ use Illuminate\Support\Facades\Storage;
     'status',
     'cover_image_path',
     'cover_status',
+    'hero_sheet_path',
     'paid_at',
 ])]
 class Book extends Model
