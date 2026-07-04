@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Storage;
  * @property string|null $scene
  * @property string|null $image_path
  * @property string|null $image_prompt
+ * @property array<string, string>|null $art_direction
  * @property PageStatus $status
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -32,6 +33,7 @@ use Illuminate\Support\Facades\Storage;
     'scene',
     'image_path',
     'image_prompt',
+    'art_direction',
     'status',
 ])]
 class Page extends Model
@@ -57,6 +59,7 @@ class Page extends Model
     {
         return [
             'status' => PageStatus::class,
+            'art_direction' => 'array',
         ];
     }
 

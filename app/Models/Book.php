@@ -32,6 +32,7 @@ use Illuminate\Support\Facades\Storage;
  * @property string|null $cover_status
  * @property string|null $hero_sheet_path
  * @property string|null $hero_sheet_prompt
+ * @property array<string, mixed>|null $story_bible
  * @property Carbon|null $paid_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -54,6 +55,7 @@ use Illuminate\Support\Facades\Storage;
     'cover_status',
     'hero_sheet_path',
     'hero_sheet_prompt',
+    'story_bible',
     'paid_at',
 ])]
 class Book extends Model
@@ -80,6 +82,7 @@ class Book extends Model
     {
         return [
             'status' => BookStatus::class,
+            'story_bible' => 'array',
             'paid_at' => 'datetime',
         ];
     }

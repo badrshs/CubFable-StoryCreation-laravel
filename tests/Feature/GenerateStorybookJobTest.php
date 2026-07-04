@@ -64,6 +64,12 @@ class GenerateStorybookJobTest extends TestCase
         $this->assertStringContainsString('joyful smile', (string) $book->cover_prompt);
         $this->assertStringContainsString('big happy smile', (string) $book->hero_sheet_prompt);
 
+        // The book bible is persisted and drives the art direction.
+        $this->assertSame('and the Glowing Lantern', $book->story_bible['subtitle']);
+        $this->assertStringContainsString('crooked stone bridge', (string) $book->story_bible['world']);
+        $this->assertSame('a tiny ladybug', $book->story_bible['motif']);
+        $this->assertStringContainsString('and the Glowing Lantern', (string) $book->cover_prompt);
+
         // ... and every attempt is journaled (first attempts all succeed here).
         $journal = ImagePrompt::query()->where('book_id', $book->id)->get();
         $this->assertCount(5, $journal);
@@ -89,6 +95,15 @@ class GenerateStorybookJobTest extends TestCase
             // no text description competes with it.
             $this->assertStringContainsString('reference image 1 (the character sheet)', (string) $page->image_prompt);
             $this->assertStringNotContainsString('Short curly brown hair', (string) $page->image_prompt);
+
+            // Every page is art-directed from the bible: shot, stable world,
+            // its own lighting note, and the find-it motif.
+            $lightings = ['warm morning gold', 'bright silver noon', 'deep-blue starlight'];
+            $this->assertNotNull($page->art_direction);
+            $this->assertStringContainsString('SHOT:', (string) $page->image_prompt);
+            $this->assertStringContainsString('crooked stone bridge', (string) $page->image_prompt);
+            $this->assertStringContainsString('Lighting: '.$lightings[$index], (string) $page->image_prompt);
+            $this->assertStringContainsString('FIND-IT MOTIF: hide a tiny ladybug', (string) $page->image_prompt);
         }
 
         $usage = AiUsage::query()->where('book_id', $book->id)->get();
@@ -191,6 +206,31 @@ class GenerateStorybookJobTest extends TestCase
         $this->assertNotNull($page->image_path);
         Http::assertSentCount(1);
         $this->assertSame($sheetPath, $book->refresh()->hero_sheet_path);
+    }
+
+    public function test_old_format_story_responses_still_work(): void
+    {
+        $book = $this->pendingBookWithCast();
+
+        Http::fake([
+            'api.openai.com/v1/chat/completions' => Http::response($this->legacyStoryChatResponse()),
+            'api.openai.com/v1/images/generations' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+            'api.openai.com/v1/images/edits' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+        ]);
+
+        (new GenerateStorybookJob($book->id))->handle(app(StoryGenerator::class));
+
+        $book->refresh();
+        $this->assertSame(BookStatus::Complete, $book->status);
+        $this->assertNull($book->story_bible);
+
+        $page = $book->pages()->first();
+        $this->assertNull($page->art_direction);
+        $this->assertStringContainsString('Scene: Mia holds a glowing lantern', (string) $page->image_prompt);
+        $this->assertStringNotContainsString('SHOT:', (string) $page->image_prompt);
+
+        // The generic subtitle map still covers the cover.
+        $this->assertStringContainsString('and the Whispering Forest', (string) $book->cover_prompt);
     }
 
     public function test_photo_mode_references_the_original_upload_and_skips_the_sheet(): void
@@ -316,11 +356,61 @@ class GenerateStorybookJobTest extends TestCase
     }
 
     /**
-     * A canned chat completion whose content is a valid 3-page story array.
+     * A canned chat completion whose content is a valid 3-page book bible.
      *
      * @return array<string, mixed>
      */
     private function storyChatResponse(): array
+    {
+        $blueprint = [
+            'subtitle' => 'and the Glowing Lantern',
+            'world' => 'A mossy forest clearing crossed by a crooked stone bridge, lantern-lit oaks and a carpet of bluebells.',
+            'motif' => 'a tiny ladybug',
+            'refrain' => 'Sniff, sniff... something smells like adventure!',
+            'colorScript' => ['warm morning gold', 'bright silver noon', 'deep-blue starlight'],
+            'pages' => [
+                [
+                    'text' => 'Mia finds a lantern.',
+                    'scene' => [
+                        'shot' => 'wide establishing',
+                        'action' => 'Mia holds a glowing lantern at the edge of the forest.',
+                        'expression' => 'curious',
+                        'detail' => 'a woolly scarf trails behind her',
+                    ],
+                ],
+                [
+                    'text' => 'Mia follows the light.',
+                    'scene' => [
+                        'shot' => 'close-up',
+                        'action' => 'Mia walks a mossy path lit by the lantern.',
+                        'expression' => 'amazed',
+                        'detail' => 'fireflies circle the lantern glass',
+                    ],
+                ],
+                [
+                    'text' => 'Mia lights the way home.',
+                    'scene' => [
+                        'shot' => "bird's eye",
+                        'action' => 'Mia stands on a hill as the lantern glows over the trees.',
+                        'expression' => 'joyful',
+                        'detail' => 'the crooked bridge glows far below',
+                    ],
+                ],
+            ],
+        ];
+
+        return [
+            'choices' => [['message' => ['content' => json_encode($blueprint)]]],
+            'usage' => ['prompt_tokens' => 100, 'completion_tokens' => 200, 'total_tokens' => 300],
+        ];
+    }
+
+    /**
+     * The legacy response shape: a plain array of {text, scene} strings.
+     *
+     * @return array<string, mixed>
+     */
+    private function legacyStoryChatResponse(): array
     {
         $story = [
             ['text' => 'Mia finds a lantern.', 'scene' => 'Mia holds a glowing lantern at the edge of the forest.'],

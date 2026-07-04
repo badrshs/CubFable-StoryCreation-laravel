@@ -18,6 +18,7 @@ use App\Services\AI\SafeImageGenerator;
 use App\Services\AI\UsageCollector;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Relations\Pivot;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -62,6 +63,19 @@ class StoryGenerator
         'rainbow' => 'and the Rainbow Bridge',
     ];
 
+    /**
+     * Read-aloud craft calibrated per age band, injected into the author
+     * prompt so a 2-4 book and an 8-10 book stop sounding the same.
+     *
+     * @var array<string, string>
+     */
+    private const AGE_WRITING_RULES = [
+        '2-4' => '1-2 very short sentences per page, simple everyday words, lots of repetition and sound words (Boom! Splash!), name objects and colors.',
+        '4-6' => '2-3 short sentences per page, playful rhythm, simple cause and effect, gentle humor, some sound words.',
+        '6-8' => '3-4 sentences per page, richer vocabulary with context clues, a real small challenge and a clever solution, light humor.',
+        '8-10' => '3-5 sentences per page, vivid vocabulary, deeper feelings and a satisfying arc, wit welcome; never talk down to the reader.',
+    ];
+
     public function __construct(
         private AiManager $ai,
         private SafeImageGenerator $safeImages,
@@ -94,17 +108,24 @@ class StoryGenerator
                 throw new RuntimeException('Book has no characters');
             }
 
-            // Story text (localized display text + English scene per page)
-            $story = $this->generateStoryText($book, $pageCount, $cast, $main);
+            // The book bible: localized text plus English art direction
+            // (world, color script, motif, per-page shots).
+            $blueprint = $this->generateStoryBlueprint($book, $pageCount, $cast, $main);
+
+            // Persist the bible before any image work so the cover subtitle
+            // and page regenerations can reuse the same world and lighting.
+            $bible = array_filter(Arr::except($blueprint, ['pages']), fn ($value): bool => $value !== null);
+            $book->update(['story_bible' => $bible !== [] ? $bible : null]);
 
             $pages = [];
 
-            foreach ($story as $index => $storyPage) {
+            foreach ($blueprint['pages'] as $index => $storyPage) {
                 $pages[] = Page::query()->create([
                     'book_id' => $book->id,
                     'page_number' => $index + 1,
                     'text' => $storyPage['text'],
                     'scene' => $storyPage['scene'],
+                    'art_direction' => $storyPage['artDirection'],
                     'image_path' => null,
                     'status' => PageStatus::Generating,
                 ]);
@@ -246,10 +267,14 @@ PROMPT;
     }
 
     /**
+     * One call, two jobs: the author writes the localized story and the art
+     * director plans how every page looks (a reusable world, a lighting arc,
+     * per-page shots, a hidden motif, a bespoke cover subtitle).
+     *
      * @param  Collection<int, Character>  $cast
-     * @return list<array{text: string, scene: string}>
+     * @return array{subtitle: ?string, world: ?string, motif: ?string, refrain: ?string, colorScript: ?list<string>, pages: list<array{text: string, scene: string, artDirection: ?array<string, string>}>}
      */
-    private function generateStoryText(Book $book, int $pageCount, Collection $cast, Character $main): array
+    private function generateStoryBlueprint(Book $book, int $pageCount, Collection $cast, Character $main): array
     {
         $langName = StoryLanguage::tryFrom($book->language)?->label() ?? 'English';
 
@@ -258,9 +283,10 @@ PROMPT;
             ->map(fn (Character $character): string => $character->name.($character->role !== null && $character->role !== '' ? " ({$character->role})" : ''))
             ->implode(', ');
         $othersText = $others !== '' ? $others : 'none';
+        $ageRules = self::AGE_WRITING_RULES[$book->age_range] ?? self::AGE_WRITING_RULES['4-6'];
 
         $prompt = <<<PROMPT
-You are a children's book author. Write a short illustrated storybook for a child named {$main->name} (age {$book->age_range}).
+You are an award-winning children's picture-book author AND the book's art director. Create a complete book plan for a personalized storybook starring {$main->name} (age {$book->age_range}).
 
 Story details:
 - Setting / world: {$book->theme}
@@ -270,36 +296,70 @@ Story details:
 - Additional characters: {$othersText}
 - Story language: {$langName}
 
-Write exactly {$pageCount} pages. {$main->name} is the hero; refer to other characters by name when they appear. For EACH page provide an object with:
-  - "text": 2-3 short sentences of the story written in {$langName} (this is what the child reads).
-  - "scene": a single vivid sentence in ENGLISH describing what is visually happening on that page (for the illustrator). ALWAYS write "scene" in English regardless of the story language. Mention by name which characters are present.
+WRITING RULES:
+1. Age calibration for {$book->age_range}: {$ageRules}
+2. {$main->name} is the hero and solves the problem through their own idea, courage or kindness - other characters help, they never rescue.
+3. Weave the life lesson through choices and their consequences. NEVER state it as a moral; never write "learned that".
+4. End odd-numbered pages on a small question or surprise so the child wants to turn the page.
+5. Include a short playful refrain (a rhythmic catchphrase or sound words) and repeat it on 2-3 pages, including near the end.
+6. Page "text" is written in {$langName}. Everything else (scene, world, subtitle, motif) is ENGLISH regardless of the story language.
 
-MOOD RULE for every "scene": {$main->name}'s expression should fit the moment while staying positive - joyful in happy moments; curious, calm, focused, amazed, cozy or gently brave in quiet or challenging ones. Never describe {$main->name} or any child as sad, crying, scared, hurt or distressed. Do not force a smile into a moment where it would look odd.
+ART DIRECTION RULES:
+7. "world": 2-3 reusable sentences describing the main location(s) - architecture, colors, props, atmosphere. Every page happens in or near this world.
+8. "colorScript": one short lighting/palette note per page (e.g. "warm morning gold"). Across the book the light should travel (e.g. morning to starry night) to mirror the emotional arc.
+9. Every page "scene" object needs:
+   - "shot": one of: wide establishing / medium / close-up / low angle / over-the-shoulder / bird's eye. Vary them - never the same shot twice in a row; open wide, go close at the emotional peak, pull back warm at the end.
+   - "action": what visually happens - specific verbs, who stands where, what hands hold. Name every character present.
+   - "expression": {$main->name}'s emotion, positive and fitting the moment (joyful, curious, focused, amazed, cozy, gently brave). Never sad, crying, scared or distressed.
+   - "detail": one small memorable prop or micro-event unique to this page.
+10. "motif": one tiny visual object (never a main character) hidden somewhere on every page for the child to find.
+11. "subtitle": a charming English cover subtitle, at most 6 words.
 
-Return ONLY a JSON array of {$pageCount} objects: [{"text":"...","scene":"..."}]. No other text.
+Write exactly {$pageCount} pages. Return ONLY this JSON object (no other text):
+{"subtitle":"...","world":"...","motif":"...","refrain":"...","colorScript":["one note per page"],"pages":[{"text":"...","scene":{"shot":"...","action":"...","expression":"...","detail":"..."}}]}
 PROMPT;
 
         $content = $this->ai->generateText($prompt);
 
-        if ($content === '') {
-            $content = '[]';
+        return $this->parseBlueprint($content, $pageCount);
+    }
+
+    /**
+     * Tolerant blueprint parsing: the full bible object when the model
+     * cooperates, graceful degradation to the legacy [{text, scene}] array
+     * (bible fields null) when it does not.
+     *
+     * @return array{subtitle: ?string, world: ?string, motif: ?string, refrain: ?string, colorScript: ?list<string>, pages: list<array{text: string, scene: string, artDirection: ?array<string, string>}>}
+     */
+    private function parseBlueprint(string $content, int $pageCount): array
+    {
+        $parsed = null;
+
+        if (preg_match('/\{[\s\S]*\}/', $content, $matches) === 1) {
+            $decoded = json_decode($matches[0], true);
+
+            if (is_array($decoded) && isset($decoded['pages'])) {
+                $parsed = $decoded;
+            }
         }
 
-        if (preg_match('/\[[\s\S]*\]/', $content, $matches) !== 1) {
-            throw new RuntimeException('Invalid story text response');
+        if ($parsed === null && preg_match('/\[[\s\S]*\]/', $content, $matches) === 1) {
+            $decoded = json_decode($matches[0], true);
+
+            if (is_array($decoded)) {
+                $parsed = ['pages' => $decoded];
+            }
         }
 
-        $parsed = json_decode($matches[0], true);
-
-        if (! is_array($parsed)) {
+        if ($parsed === null || ! is_array($parsed['pages'] ?? null)) {
             throw new RuntimeException('Invalid story text response');
         }
 
         $pages = [];
 
-        foreach (array_slice(array_values($parsed), 0, $pageCount) as $item) {
+        foreach (array_slice(array_values($parsed['pages']), 0, $pageCount) as $item) {
             if (is_string($item)) {
-                $pages[] = ['text' => $item, 'scene' => $item];
+                $pages[] = ['text' => $item, 'scene' => $item, 'artDirection' => null];
 
                 continue;
             }
@@ -307,13 +367,71 @@ PROMPT;
             $rawText = is_array($item) ? ($item['text'] ?? null) : null;
             $rawScene = is_array($item) ? ($item['scene'] ?? null) : null;
 
+            if (is_array($rawScene)) {
+                $artDirection = [];
+
+                foreach (['shot', 'action', 'expression', 'detail'] as $key) {
+                    $value = trim($this->stringify($rawScene[$key] ?? null));
+
+                    if ($value !== '') {
+                        $artDirection[$key] = $value;
+                    }
+                }
+
+                $flatScene = trim(($artDirection['action'] ?? '').' '.($artDirection['detail'] ?? ''));
+
+                $pages[] = [
+                    'text' => $this->stringify($rawText),
+                    'scene' => $flatScene !== '' ? $flatScene : $this->stringify($rawText),
+                    'artDirection' => $artDirection !== [] ? $artDirection : null,
+                ];
+
+                continue;
+            }
+
             $pages[] = [
                 'text' => $this->stringify($rawText),
                 'scene' => $this->stringify($rawScene ?? $rawText),
+                'artDirection' => null,
             ];
         }
 
-        return $pages;
+        $colorScript = null;
+
+        if (is_array($parsed['colorScript'] ?? null)) {
+            $colorScript = array_values(array_filter(array_map(
+                fn ($note): string => trim($this->stringify($note)),
+                $parsed['colorScript'],
+            ), fn (string $note): bool => $note !== ''));
+
+            if ($colorScript === []) {
+                $colorScript = null;
+            }
+        }
+
+        return [
+            'subtitle' => $this->bibleLine($parsed['subtitle'] ?? null, 60),
+            'world' => $this->bibleLine($parsed['world'] ?? null, 800),
+            'motif' => $this->bibleLine($parsed['motif'] ?? null, 200),
+            'refrain' => $this->bibleLine($parsed['refrain'] ?? null, 200),
+            'colorScript' => $colorScript,
+            'pages' => $pages,
+        ];
+    }
+
+    /**
+     * A single clean bible value: trimmed, unquoted, length-capped, or null.
+     */
+    private function bibleLine(mixed $value, int $maxLength): ?string
+    {
+        $line = trim(trim($this->stringify($value)), "\"'");
+        $line = trim(preg_replace('/\s+/', ' ', $line) ?? '');
+
+        if ($line === '') {
+            return null;
+        }
+
+        return mb_substr($line, 0, $maxLength);
     }
 
     /**
@@ -420,14 +538,24 @@ PROMPT;
     }
 
     /**
-     * Build the per-page prompt + reference photos for the characters in a scene.
+     * Build the per-page prompt + reference photos for the characters in a
+     * scene. Art-directed pages get a film-brief layout (shot, setting from
+     * the book bible, lighting from the color script, a find-it motif);
+     * legacy pages keep the original single-sentence format.
      *
      * @param  Collection<int, Character>  $cast
      * @return array{prompt: string, references: list<ImageReference>}
      */
-    private function buildScene(Book $book, string $pageNumberLabel, string $sceneText, string $matchText, Collection $cast, Character $main, ?ImageReference $anchor = null): array
+    private function buildScene(Book $book, Page $page, Collection $cast, Character $main, ?ImageReference $anchor = null): array
     {
         $artStyle = self::ART_STYLE_PROMPTS[$book->art_style] ?? self::ART_STYLE_PROMPTS['storybook'];
+        $pageNumberLabel = "page {$page->page_number}";
+        $sceneText = ($page->scene ?? '') !== '' ? (string) $page->scene : $page->text;
+        $matchText = ($page->scene ?? '').' '.$page->text;
+
+        $direction = $page->art_direction ?? [];
+        $bible = $book->story_bible ?? [];
+        $expression = $direction['expression'] ?? null;
 
         // The main character is always present; others only when named in the scene.
         $present = $cast->filter(
@@ -464,27 +592,28 @@ PROMPT;
                 ? 'the main character/hero'
                 : ($member->role !== null && $member->role !== '' ? $member->role : 'character');
 
+            $expressionNote = $member->id === $main->id && $expression !== null
+                ? " Expression: {$expression}."
+                : '';
+
             if ($withinBudget) {
                 $position = count($references);
-                $lines[] = "- {$member->name}, {$roleText}: shown in attached reference image {$position} - copy their face, hair, build and outfit exactly from it, redrawn in the art style (an illustration, never a photo).";
+                $lines[] = "- {$member->name}, {$roleText}: shown in attached reference image {$position} - copy their face, hair, build and outfit exactly from it, redrawn in the art style (an illustration, never a photo).{$expressionNote}";
             } elseif ($anchorCoversMember) {
-                $lines[] = "- {$member->name}, {$roleText}: shown in attached reference image 1 (the character sheet).";
+                $lines[] = "- {$member->name}, {$roleText}: shown in attached reference image 1 (the character sheet).{$expressionNote}";
             } else {
                 $appearance = trim((string) $member->appearance);
-                $lines[] = "- {$member->name}, {$roleText}: ".($appearance !== '' ? $appearance : '(invent a consistent look)');
+                $lines[] = "- {$member->name}, {$roleText}: ".($appearance !== '' ? $appearance : '(invent a consistent look)').$expressionNote;
             }
         }
 
-        $subjectNote = $book->subject !== ''
-            ? "\nThe story is about {$book->subject} - reflect it in the setting, props and action wherever it fits naturally."
-            : '';
-
         $characterLines = implode("\n", $lines);
+        $sceneBlock = $this->sceneBlock($book, $page, $direction, $bible, $sceneText);
 
         $prompt = <<<PROMPT
 {$artStyle}. Children's picture book illustration for {$pageNumberLabel}.
 
-Scene: {$sceneText}{$subjectNote}
+{$sceneBlock}
 
 Characters in this scene (draw each EXACTLY and consistently):
 {$characterLines}
@@ -500,14 +629,56 @@ PROMPT;
     }
 
     /**
+     * The scene header: a film-brief block when art direction exists, the
+     * legacy single-sentence format otherwise.
+     *
+     * @param  array<string, string>  $direction
+     * @param  array<string, mixed>  $bible
+     */
+    private function sceneBlock(Book $book, Page $page, array $direction, array $bible, string $sceneText): string
+    {
+        if ($direction === []) {
+            $subjectNote = $book->subject !== ''
+                ? "\nThe story is about {$book->subject} - reflect it in the setting, props and action wherever it fits naturally."
+                : '';
+
+            return "Scene: {$sceneText}{$subjectNote}";
+        }
+
+        $shot = $direction['shot'] ?? 'medium';
+        $action = $direction['action'] ?? $sceneText;
+
+        $lines = ["SHOT: {$shot}: {$action}"];
+
+        $world = trim($this->stringify($bible['world'] ?? null));
+        $colorScript = is_array($bible['colorScript'] ?? null) ? $bible['colorScript'] : [];
+        $lighting = trim($this->stringify($colorScript[$page->page_number - 1] ?? null));
+
+        $setting = trim(($world !== '' ? $world.' ' : '').($lighting !== '' ? "Lighting: {$lighting}." : ''));
+
+        if ($setting !== '') {
+            $lines[] = "SETTING: {$setting}";
+        }
+
+        if (($direction['detail'] ?? '') !== '') {
+            $lines[] = "DETAIL: {$direction['detail']}";
+        }
+
+        $motif = trim($this->stringify($bible['motif'] ?? null));
+
+        if ($motif !== '') {
+            $lines[] = "FIND-IT MOTIF: hide {$motif} somewhere subtle in the scene for the child to discover.";
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
      * @param  Collection<int, Character>  $cast
      */
     private function generatePageImage(Page $page, Book $book, Collection $cast, Character $main, ?ImageReference $anchor = null): GeneratedImage
     {
-        $sceneText = ($page->scene ?? '') !== '' ? (string) $page->scene : $page->text;
-        $matchText = ($page->scene ?? '').' '.$page->text;
-
-        ['prompt' => $prompt, 'references' => $references] = $this->buildScene($book, "page {$page->page_number}", $sceneText, $matchText, $cast, $main, $anchor);
+        ['prompt' => $prompt, 'references' => $references] = $this->buildScene($book, $page, $cast, $main, $anchor);
 
         return $this->safeImages->generate($prompt, '1536x1024', $references, "page {$page->page_number}", new PromptLogContext($book->id, 'page', $page->id));
     }
@@ -520,7 +691,8 @@ PROMPT;
     private function generateCoverImage(Book $book, Character $main, ?ImageReference $anchor = null): GeneratedImage
     {
         $artStyle = self::ART_STYLE_PROMPTS[$book->art_style] ?? self::ART_STYLE_PROMPTS['storybook'];
-        $coverSubtitle = self::COVER_SUBTITLES[$book->theme] ?? 'A Magical Adventure';
+        $bibleSubtitle = $this->bibleLine($book->story_bible['subtitle'] ?? null, 60);
+        $coverSubtitle = $bibleSubtitle ?? (self::COVER_SUBTITLES[$book->theme] ?? 'A Magical Adventure');
 
         // Reference OR description, never both (see buildScene).
         $coverReferences = [];
