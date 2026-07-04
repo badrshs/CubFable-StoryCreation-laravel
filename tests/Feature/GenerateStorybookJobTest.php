@@ -208,6 +208,44 @@ class GenerateStorybookJobTest extends TestCase
         $this->assertSame($sheetPath, $book->refresh()->hero_sheet_path);
     }
 
+    public function test_an_interrupted_run_resumes_without_rewriting_or_rebilling(): void
+    {
+        $book = $this->pendingBookWithCast();
+
+        // Simulate the state a dead worker leaves behind: story written,
+        // pages created, two images done, one missing, no cover yet.
+        $existingImage = 'books/'.$book->id.'/pages/1-existing.png';
+        Storage::disk('public')->put($existingImage, (string) base64_decode(self::PNG_BASE64, true));
+        $existingImageTwo = 'books/'.$book->id.'/pages/2-existing.png';
+        Storage::disk('public')->put($existingImageTwo, (string) base64_decode(self::PNG_BASE64, true));
+
+        Page::query()->create(['book_id' => $book->id, 'page_number' => 1, 'text' => 'Mia finds a lantern.', 'scene' => 'Mia holds a glowing lantern.', 'image_path' => $existingImage, 'status' => PageStatus::Complete]);
+        Page::query()->create(['book_id' => $book->id, 'page_number' => 2, 'text' => 'Mia follows the light.', 'scene' => 'Mia walks a mossy path.', 'image_path' => $existingImageTwo, 'status' => PageStatus::Complete]);
+        Page::query()->create(['book_id' => $book->id, 'page_number' => 3, 'text' => 'Mia lights the way home.', 'scene' => 'Mia stands on a hill.', 'image_path' => null, 'status' => PageStatus::Generating]);
+
+        // No chat/completions fake on purpose: rewriting the story on resume
+        // would hit preventStrayRequests and fail loudly.
+        Http::fake([
+            'api.openai.com/v1/images/generations' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+            'api.openai.com/v1/images/edits' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+        ]);
+
+        (new GenerateStorybookJob($book->id))->handle(app(StoryGenerator::class));
+
+        $book->refresh();
+        $this->assertSame(BookStatus::Complete, $book->status);
+        $this->assertNotNull($book->cover_image_path);
+
+        // The finished pages kept their files; only page 3 was generated.
+        $this->assertSame($existingImage, $book->pages()->where('page_number', 1)->first()->image_path);
+        $this->assertSame($existingImageTwo, $book->pages()->where('page_number', 2)->first()->image_path);
+        $this->assertSame(PageStatus::Complete, $book->pages()->where('page_number', 3)->first()->status);
+        $this->assertNotNull($book->pages()->where('page_number', 3)->first()->image_path);
+
+        // Character sheet + cover + one missing page = exactly 3 image calls.
+        Http::assertSentCount(3);
+    }
+
     public function test_old_format_story_responses_still_work(): void
     {
         $book = $this->pendingBookWithCast();

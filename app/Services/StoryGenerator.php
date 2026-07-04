@@ -108,40 +108,55 @@ class StoryGenerator
                 throw new RuntimeException('Book has no characters');
             }
 
-            // The book bible: localized text plus English art direction
-            // (world, color script, motif, per-page shots).
-            $blueprint = $this->generateStoryBlueprint($book, $pageCount, $cast, $main);
+            $pages = $book->pages()->get()->all();
 
-            // Persist the bible before any image work so the cover subtitle
-            // and page regenerations can reuse the same world and lighting.
-            $bible = array_filter(Arr::except($blueprint, ['pages']), fn ($value): bool => $value !== null);
-            $book->update(['story_bible' => $bible !== [] ? $bible : null]);
+            if ($pages === []) {
+                // The book bible: localized text plus English art direction
+                // (world, color script, motif, per-page shots).
+                $blueprint = $this->generateStoryBlueprint($book, $pageCount, $cast, $main);
 
-            $pages = [];
+                // Persist the bible before any image work so the cover subtitle
+                // and page regenerations can reuse the same world and lighting.
+                $bible = array_filter(Arr::except($blueprint, ['pages']), fn ($value): bool => $value !== null);
+                $book->update(['story_bible' => $bible !== [] ? $bible : null]);
 
-            foreach ($blueprint['pages'] as $index => $storyPage) {
-                $pages[] = Page::query()->create([
-                    'book_id' => $book->id,
-                    'page_number' => $index + 1,
-                    'text' => $storyPage['text'],
-                    'scene' => $storyPage['scene'],
-                    'art_direction' => $storyPage['artDirection'],
-                    'image_path' => null,
-                    'status' => PageStatus::Generating,
-                ]);
+                foreach ($blueprint['pages'] as $index => $storyPage) {
+                    $pages[] = Page::query()->create([
+                        'book_id' => $book->id,
+                        'page_number' => $index + 1,
+                        'text' => $storyPage['text'],
+                        'scene' => $storyPage['scene'],
+                        'art_direction' => $storyPage['artDirection'],
+                        'image_path' => null,
+                        'status' => PageStatus::Generating,
+                    ]);
+                }
             }
+            // Existing pages mean an interrupted run being resumed: the story
+            // and bible are already persisted, only missing images remain.
 
             // One canonical stylized rendition of the hero. The cover and
             // every page copy it, so the photo-to-illustration jump happens
             // once here instead of independently on every image. In photo
             // mode the original upload leads instead and no sheet is made.
-            $anchor = $this->anchorsWithSheet($main) ? $this->prepareHeroSheet($book, $main) : null;
+            // A sheet that survived an interrupted run is reused as-is.
+            $anchor = $this->anchorsWithSheet($main)
+                ? ($this->anchorFor($book) ?? $this->prepareHeroSheet($book, $main))
+                : null;
 
-            // Cover (generated WITH the title; the decorative frame is added in the UI)
-            $this->storeCover($book, $main, $anchor);
+            // Cover (generated WITH the title; the decorative frame is added
+            // in the UI). Skipped when a previous run already produced one.
+            if ($book->cover_image_path === null) {
+                $this->storeCover($book, $main, $anchor);
+            }
 
-            // Pages (sequential to stay within rate limits)
+            // Pages (sequential to stay within rate limits); pages that
+            // already have their illustration are never re-billed.
             foreach ($pages as $page) {
+                if ($page->status === PageStatus::Complete && $page->image_path !== null) {
+                    continue;
+                }
+
                 try {
                     $this->storePageIllustration($page, $book, $cast, $main, $anchor);
                 } catch (Throwable $exception) {
