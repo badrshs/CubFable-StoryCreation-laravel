@@ -399,5 +399,7 @@
     "gallery.deleteDraftTitle": "¿Eliminar este borrador?",
     "gallery.deleteDraftBody": "Este cuento aún no se ha pagado. El borrador se eliminará; tus personajes guardados permanecen en la biblioteca.",
     "checkout.editDetails": "Cambiar detalles",
-    "wizard.editEyebrow": "Edita tu cuento"
+    "wizard.editEyebrow": "Edita tu cuento",
+    "artStyle.crayon": "Crayones",
+    "artStyle.felt_craft": "Fieltro"
 }

@@ -399,5 +399,7 @@
     "gallery.deleteDraftTitle": "Bu taslak silinsin mi?",
     "gallery.deleteDraftBody": "Bu masal için henüz ödeme yapılmadı. Taslak kaldırılacak; kayıtlı karakterleriniz kitaplıkta kalır.",
     "checkout.editDetails": "Ayrıntıları değiştir",
-    "wizard.editEyebrow": "Masalını düzenle"
+    "wizard.editEyebrow": "Masalını düzenle",
+    "artStyle.crayon": "Mum Boya",
+    "artStyle.felt_craft": "Keçe İşi"
 }

@@ -7,14 +7,16 @@ import type { ArtStyle, StoryLanguage } from '@/types/cubfable';
 export const ART_STYLES: ArtStyle[] = [
     '3d-animation',
     'watercolor',
-    'geometric',
+    'storybook',
+    'crayon',
+    'gouache',
     'clay-animation',
+    'felt-craft',
     'sticker-art',
     'comic-book',
-    'gouache',
     'soft-anime',
-    'block-world',
     'collage',
+    'block-world',
 ];
 
 export const LESSONS: string[] = [

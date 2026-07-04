@@ -41,9 +41,11 @@ class StoryGenerator
         'soft-anime' => 'gentle anime cel-shaded style, soft ambient shading, expressive large eyes, delicate clean linework, dreamy pastel lighting',
         'block-world' => 'blocky voxel 3D world, cubic stylized characters and props, playful building-block aesthetic, clean bright lighting',
         'collage' => 'paper-cut collage style, layered torn and cut textured paper, mixed-media handmade feel, soft shadows between the paper layers',
+        'storybook' => 'classic storybook illustration, detailed oil painting, warm golden light, fairy tale style',
+        'crayon' => "child's crayon and colored-pencil drawing, waxy expressive strokes, construction-paper texture, naive charming lines, bright primary colors",
+        'felt-craft' => 'needle-felted wool and fabric craft scene, soft fuzzy textures, hand-stitched details, cozy handmade toy look, gentle studio lighting',
         // Legacy styles kept so older books still render.
         'cartoon' => 'vibrant cartoon illustration, bold outlines, bright cheerful colors, animated movie style',
-        'storybook' => 'classic storybook illustration, detailed oil painting, warm golden light, fairy tale style',
         'pencil-sketch' => "pencil sketch with light color wash, hand-drawn look, soft texture, illustrated children's book",
         'digital-art' => "digital illustration, clean lines, vibrant colors, modern children's book style",
     ];

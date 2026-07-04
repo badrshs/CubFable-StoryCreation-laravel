@@ -399,5 +399,7 @@
     "gallery.deleteDraftTitle": "Excluir este rascunho?",
     "gallery.deleteDraftBody": "Este conto ainda não foi pago. O rascunho será removido; seus personagens salvos permanecem na biblioteca.",
     "checkout.editDetails": "Alterar detalhes",
-    "wizard.editEyebrow": "Edite o seu conto"
+    "wizard.editEyebrow": "Edite o seu conto",
+    "artStyle.crayon": "Giz de cera",
+    "artStyle.felt_craft": "Feltro"
 }

@@ -399,5 +399,7 @@
     "gallery.deleteDraftTitle": "Eliminare questa bozza?",
     "gallery.deleteDraftBody": "Questa storia non è ancora stata pagata. La bozza verrà rimossa; i personaggi salvati restano nella libreria.",
     "checkout.editDetails": "Cambia dettagli",
-    "wizard.editEyebrow": "Modifica la tua storia"
+    "wizard.editEyebrow": "Modifica la tua storia",
+    "artStyle.crayon": "Pastelli a cera",
+    "artStyle.felt_craft": "Feltro"
 }

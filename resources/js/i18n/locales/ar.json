@@ -399,5 +399,7 @@
     "gallery.deleteDraftTitle": "حذف هذه المسودة؟",
     "gallery.deleteDraftBody": "لم يتم الدفع لهذه الحكاية بعد. ستحذف المسودة، وتبقى شخصياتك المحفوظة في المكتبة.",
     "checkout.editDetails": "تغيير التفاصيل",
-    "wizard.editEyebrow": "عدل حكايتك"
+    "wizard.editEyebrow": "عدل حكايتك",
+    "artStyle.crayon": "ألوان الشمع",
+    "artStyle.felt_craft": "اللباد الصوفي"
 }

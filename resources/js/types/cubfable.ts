@@ -7,14 +7,16 @@ export type AgeRange = '2-4' | '4-6' | '6-8' | '8-10';
 export type ArtStyle =
     | '3d-animation'
     | 'watercolor'
-    | 'geometric'
+    | 'storybook'
+    | 'crayon'
+    | 'gouache'
     | 'clay-animation'
+    | 'felt-craft'
     | 'sticker-art'
     | 'comic-book'
-    | 'gouache'
     | 'soft-anime'
-    | 'block-world'
-    | 'collage';
+    | 'collage'
+    | 'block-world';
 
 export type BookFont = 'playful' | 'classic' | 'handwritten' | 'bold';
 

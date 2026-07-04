@@ -735,7 +735,7 @@ export default function CreateWizard({
                                             aria-label={t(
                                                 'wizard.illustrationStyle',
                                             )}
-                                            className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
+                                            className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
                                         >
                                             {ART_STYLES.map((style) => {
                                                 const selected =
@@ -750,15 +750,18 @@ export default function CreateWizard({
                                                         onClick={() =>
                                                             setArtStyle(style)
                                                         }
-                                                        className={`group relative overflow-hidden rounded-2xl border p-1.5 text-start transition-all duration-200 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none ${
+                                                        className={`group relative overflow-hidden rounded-2xl border bg-card text-start transition-all duration-200 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none ${
                                                             selected
                                                                 ? 'border-gold shadow-glow'
                                                                 : 'border-card-border hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-soft'
                                                         }`}
                                                     >
+                                                        {/* Real example art: the same scene rendered in this
+                                                            style. Falls back to the gradient swatch if the
+                                                            image is missing. */}
                                                         <span
                                                             aria-hidden
-                                                            className="block h-14 w-full rounded-xl"
+                                                            className="block aspect-[4/3] w-full overflow-hidden"
                                                             style={{
                                                                 backgroundImage:
                                                                     ART_STYLE_SWATCHES[
@@ -766,17 +769,36 @@ export default function CreateWizard({
                                                                     ] ??
                                                                     ART_STYLE_SWATCHES.watercolor,
                                                             }}
-                                                        />
-                                                        <span className="mt-1.5 block px-1 pb-0.5 text-xs font-semibold text-foreground">
+                                                        >
+                                                            <img
+                                                                src={`/images/art-styles/${style}.jpg`}
+                                                                alt=""
+                                                                loading="lazy"
+                                                                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+                                                                onError={(
+                                                                    e,
+                                                                ) => {
+                                                                    e.currentTarget.style.display =
+                                                                        'none';
+                                                                }}
+                                                            />
+                                                        </span>
+                                                        <span
+                                                            className={`block px-2.5 py-2 text-xs font-semibold ${
+                                                                selected
+                                                                    ? 'text-gold-foreground dark:text-gold'
+                                                                    : 'text-foreground'
+                                                            }`}
+                                                        >
                                                             {tc(
                                                                 `artStyle.${slugify(style)}`,
                                                                 style,
                                                             )}
                                                         </span>
                                                         {selected && (
-                                                            <span className="absolute end-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-gold text-gold-foreground shadow-soft">
+                                                            <span className="absolute end-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-gold text-gold-foreground shadow-soft">
                                                                 <Check
-                                                                    className="h-3 w-3"
+                                                                    className="h-3.5 w-3.5"
                                                                     aria-hidden
                                                                 />
                                                             </span>

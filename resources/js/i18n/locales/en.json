@@ -399,5 +399,7 @@
     "gallery.deleteDraftTitle": "Delete this draft?",
     "gallery.deleteDraftBody": "This tale has not been paid for yet. The draft will be removed; your saved characters stay in the library.",
     "checkout.editDetails": "Change details",
-    "wizard.editEyebrow": "Edit your tale"
+    "wizard.editEyebrow": "Edit your tale",
+    "artStyle.crayon": "Crayon",
+    "artStyle.felt_craft": "Felt Craft"
 }

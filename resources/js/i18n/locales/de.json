@@ -399,5 +399,7 @@
     "gallery.deleteDraftTitle": "Diesen Entwurf löschen?",
     "gallery.deleteDraftBody": "Diese Geschichte wurde noch nicht bezahlt. Der Entwurf wird entfernt; gespeicherte Figuren bleiben in der Bibliothek.",
     "checkout.editDetails": "Details ändern",
-    "wizard.editEyebrow": "Bearbeite deine Geschichte"
+    "wizard.editEyebrow": "Bearbeite deine Geschichte",
+    "artStyle.crayon": "Wachsmalstift",
+    "artStyle.felt_craft": "Filzkunst"
 }

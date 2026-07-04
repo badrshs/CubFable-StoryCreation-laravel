@@ -399,5 +399,7 @@
     "gallery.deleteDraftTitle": "Supprimer ce brouillon ?",
     "gallery.deleteDraftBody": "Ce conte n'a pas encore été payé. Le brouillon sera supprimé ; vos personnages enregistrés restent dans la bibliothèque.",
     "checkout.editDetails": "Modifier les détails",
-    "wizard.editEyebrow": "Modifiez votre conte"
+    "wizard.editEyebrow": "Modifiez votre conte",
+    "artStyle.crayon": "Crayons de cire",
+    "artStyle.felt_craft": "Feutrine"
 }
