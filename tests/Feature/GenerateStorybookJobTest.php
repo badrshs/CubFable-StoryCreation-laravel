@@ -61,7 +61,7 @@ class GenerateStorybookJobTest extends TestCase
         $this->assertStringContainsString('Character reference sheet', (string) $book->hero_sheet_prompt);
 
         // The hero is always drawn happy, on the cover and on every page.
-        $this->assertStringContainsString('joyful smile', (string) $book->cover_prompt);
+        $this->assertStringContainsString('radiantly happy', (string) $book->cover_prompt);
         $this->assertStringContainsString('big happy smile', (string) $book->hero_sheet_prompt);
 
         // The book bible is persisted and drives the art direction.
@@ -69,6 +69,13 @@ class GenerateStorybookJobTest extends TestCase
         $this->assertStringContainsString('crooked stone bridge', (string) $book->story_bible['world']);
         $this->assertSame('a tiny ladybug', $book->story_bible['motif']);
         $this->assertStringContainsString('and the Glowing Lantern', (string) $book->cover_prompt);
+
+        // The cover is designed key art: the story's iconic moment, a themed
+        // title treatment, and the find-it motif hidden on the cover too.
+        $this->assertStringContainsString('COVER KEY ART', (string) $book->cover_prompt);
+        $this->assertStringContainsString('leaps across the crooked stone bridge', (string) $book->cover_prompt);
+        $this->assertStringContainsString('woven from glowing lantern light', (string) $book->cover_prompt);
+        $this->assertStringContainsString('Hide a tiny ladybug', (string) $book->cover_prompt);
 
         // ... and every attempt is journaled (first attempts all succeed here).
         $journal = ImagePrompt::query()->where('book_id', $book->id)->get();
@@ -267,8 +274,11 @@ class GenerateStorybookJobTest extends TestCase
         $this->assertStringContainsString('Scene: Mia holds a glowing lantern', (string) $page->image_prompt);
         $this->assertStringNotContainsString('SHOT:', (string) $page->image_prompt);
 
-        // The generic subtitle map still covers the cover.
+        // The generic subtitle map still covers the cover, with the classic
+        // hero-portrait composition instead of designed key art.
         $this->assertStringContainsString('and the Whispering Forest', (string) $book->cover_prompt);
+        $this->assertStringContainsString('Below the title,', (string) $book->cover_prompt);
+        $this->assertStringNotContainsString('COVER KEY ART', (string) $book->cover_prompt);
     }
 
     public function test_photo_mode_references_the_original_upload_and_skips_the_sheet(): void
@@ -406,6 +416,10 @@ class GenerateStorybookJobTest extends TestCase
             'motif' => 'a tiny ladybug',
             'refrain' => 'Sniff, sniff... something smells like adventure!',
             'colorScript' => ['warm morning gold', 'bright silver noon', 'deep-blue starlight'],
+            'cover' => [
+                'moment' => 'Mia leaps across the crooked stone bridge holding the lantern high as fireflies spiral around her.',
+                'titleStyle' => 'hand-lettered letters woven from glowing lantern light and firefly trails',
+            ],
             'pages' => [
                 [
                     'text' => 'Mia finds a lantern.',

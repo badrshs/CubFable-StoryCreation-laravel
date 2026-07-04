@@ -287,7 +287,7 @@ PROMPT;
      * per-page shots, a hidden motif, a bespoke cover subtitle).
      *
      * @param  Collection<int, Character>  $cast
-     * @return array{subtitle: ?string, world: ?string, motif: ?string, refrain: ?string, colorScript: ?list<string>, pages: list<array{text: string, scene: string, artDirection: ?array<string, string>}>}
+     * @return array{subtitle: ?string, world: ?string, motif: ?string, refrain: ?string, colorScript: ?list<string>, cover: ?array<string, string>, pages: list<array{text: string, scene: string, artDirection: ?array<string, string>}>}
      */
     private function generateStoryBlueprint(Book $book, int $pageCount, Collection $cast, Character $main): array
     {
@@ -329,9 +329,12 @@ ART DIRECTION RULES:
    - "detail": one small memorable prop or micro-event unique to this page.
 10. "motif": one tiny visual object (never a main character) hidden somewhere on every page for the child to find.
 11. "subtitle": a charming English cover subtitle, at most 6 words.
+12. "cover": design the front cover like a bestselling published picture book:
+   - "moment": the single most magical, iconic moment of THIS story as cover key art - {$main->name} mid-action and full of wonder (never a static standing pose), with the story's world behind them and room at the top for the title.
+   - "titleStyle": how the hand-lettered title should look, themed to the story (materials, colors, tiny ornaments - e.g. letters entwined with ivy, letters built from brass cogs and springs).
 
 Write exactly {$pageCount} pages. Return ONLY this JSON object (no other text):
-{"subtitle":"...","world":"...","motif":"...","refrain":"...","colorScript":["one note per page"],"pages":[{"text":"...","scene":{"shot":"...","action":"...","expression":"...","detail":"..."}}]}
+{"subtitle":"...","world":"...","motif":"...","refrain":"...","colorScript":["one note per page"],"cover":{"moment":"...","titleStyle":"..."},"pages":[{"text":"...","scene":{"shot":"...","action":"...","expression":"...","detail":"..."}}]}
 PROMPT;
 
         $content = $this->ai->generateText($prompt);
@@ -344,7 +347,7 @@ PROMPT;
      * cooperates, graceful degradation to the legacy [{text, scene}] array
      * (bible fields null) when it does not.
      *
-     * @return array{subtitle: ?string, world: ?string, motif: ?string, refrain: ?string, colorScript: ?list<string>, pages: list<array{text: string, scene: string, artDirection: ?array<string, string>}>}
+     * @return array{subtitle: ?string, world: ?string, motif: ?string, refrain: ?string, colorScript: ?list<string>, cover: ?array<string, string>, pages: list<array{text: string, scene: string, artDirection: ?array<string, string>}>}
      */
     private function parseBlueprint(string $content, int $pageCount): array
     {
@@ -424,12 +427,26 @@ PROMPT;
             }
         }
 
+        $cover = null;
+
+        if (is_array($parsed['cover'] ?? null)) {
+            $cover = array_filter([
+                'moment' => $this->bibleLine($parsed['cover']['moment'] ?? null, 600),
+                'titleStyle' => $this->bibleLine($parsed['cover']['titleStyle'] ?? null, 300),
+            ], fn (?string $value): bool => $value !== null);
+
+            if ($cover === []) {
+                $cover = null;
+            }
+        }
+
         return [
             'subtitle' => $this->bibleLine($parsed['subtitle'] ?? null, 60),
             'world' => $this->bibleLine($parsed['world'] ?? null, 800),
             'motif' => $this->bibleLine($parsed['motif'] ?? null, 200),
             'refrain' => $this->bibleLine($parsed['refrain'] ?? null, 200),
             'colorScript' => $colorScript,
+            'cover' => $cover,
             'pages' => $pages,
         ];
     }
@@ -706,8 +723,13 @@ PROMPT;
     private function generateCoverImage(Book $book, Character $main, ?ImageReference $anchor = null): GeneratedImage
     {
         $artStyle = self::ART_STYLE_PROMPTS[$book->art_style] ?? self::ART_STYLE_PROMPTS['storybook'];
-        $bibleSubtitle = $this->bibleLine($book->story_bible['subtitle'] ?? null, 60);
+        $bible = $book->story_bible ?? [];
+        $bibleSubtitle = $this->bibleLine($bible['subtitle'] ?? null, 60);
         $coverSubtitle = $bibleSubtitle ?? (self::COVER_SUBTITLES[$book->theme] ?? 'A Magical Adventure');
+        $titleStyle = $this->bibleLine($bible['cover']['titleStyle'] ?? null, 300)
+            ?? 'large, flowing, golden hand-lettered script';
+        $coverMoment = $this->bibleLine($bible['cover']['moment'] ?? null, 600);
+        $motif = $this->bibleLine($bible['motif'] ?? null, 200);
 
         // Reference OR description, never both (see buildScene).
         $coverReferences = [];
@@ -729,14 +751,22 @@ PROMPT;
             ? ", with the story's subject ({$book->subject}) clearly featured in the scene"
             : '';
 
+        $keyArt = $coverMoment !== null
+            ? "COVER KEY ART (below the title): {$coverMoment} {$main->name}{$photoNote} is the focal point, mid-moment and full of joyful wonder.{$identityClause}"
+            : "Below the title, {$main->name}{$photoNote} as the central hero, beaming with a big joyful smile, in a {$book->theme} setting{$subjectClause}.{$identityClause}";
+
+        $motifLine = $motif !== null
+            ? "\nHide {$motif} somewhere subtle in the artwork."
+            : '';
+
         $coverPrompt = <<<PROMPT
-A professionally illustrated children's storybook FRONT COVER, portrait orientation, in the {$book->art_style} art style ({$artStyle}). Make it look like a real published picture book.
+A professionally illustrated children's storybook FRONT COVER, portrait orientation, in the {$book->art_style} art style ({$artStyle}). Compose it like a bestselling published picture-book cover: clear focal hierarchy (title first, then {$main->name}, then the world), gentle negative space around the title, and real depth with foreground and background layers.
 
 TITLE TEXT (render it directly in the artwork at the top, beautifully and spelled EXACTLY, in English, clearly legible - this is the ONLY text anywhere on the cover):
-  - First line: "{$main->name}" as large, flowing, golden hand-lettered script.
+  - First line: "{$main->name}" as {$titleStyle}.
   - Second line: "{$coverSubtitle}" in a smaller elegant classic serif.
 
-Below the title, {$main->name}{$photoNote} as the central hero, beaming with a big joyful smile, in a {$book->theme} setting{$subjectClause}.{$identityClause} {$main->name} must look radiantly happy - never sad, scared or upset.
+{$keyArt} {$main->name} must look radiantly happy - never sad, scared or upset.{$motifLine}
 
 Leave a small clean margin around the edges (a decorative frame is added separately - do NOT draw a border yourself). Warm, magical, richly detailed, with the title clearly readable at the top. Spell the title exactly as written; do not add any other words or letters.
 PROMPT;
