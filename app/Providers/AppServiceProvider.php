@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Services\AI\FlowSessionContext;
 use App\Services\AI\UsageCollector;
+use App\Services\AppSettings;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +20,9 @@ class AppServiceProvider extends ServiceProvider
     {
         // Scoped (not singleton) so the usage buffer resets between queue jobs.
         $this->app->scoped(UsageCollector::class);
+
+        // Scoped for the same reason: the flow session key is per generation run.
+        $this->app->scoped(FlowSessionContext::class);
     }
 
     /**
@@ -26,6 +31,9 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+
+        // Admin-edited runtime settings shadow the env-backed cubfable config.
+        $this->app->make(AppSettings::class)->apply();
     }
 
     /**

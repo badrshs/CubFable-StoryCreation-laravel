@@ -1,5 +1,6 @@
 <?php
 
+use App\Logging\BookLogHandler;
 use Monolog\Handler\NullHandler;
 use Monolog\Handler\StreamHandler;
 use Monolog\Handler\SyslogUdpHandler;
@@ -54,8 +55,16 @@ return [
 
         'stack' => [
             'driver' => 'stack',
-            'channels' => explode(',', (string) env('LOG_STACK', 'single')),
+            // The books channel tees any record carrying a book_id into that
+            // book's own file; everything still reaches the main channels.
+            'channels' => [...explode(',', (string) env('LOG_STACK', 'single')), 'books'],
             'ignore_exceptions' => false,
+        ],
+
+        'books' => [
+            'driver' => 'monolog',
+            'handler' => BookLogHandler::class,
+            'level' => env('LOG_LEVEL', 'debug'),
         ],
 
         'single' => [

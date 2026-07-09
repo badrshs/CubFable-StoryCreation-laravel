@@ -175,6 +175,28 @@ class BookCreationTest extends TestCase
         $this->assertSame($stranger->id, $foreign->user_id);
     }
 
+    public function test_a_cast_members_age_group_is_saved_and_invalid_values_are_rejected(): void
+    {
+        $user = User::factory()->create();
+        $template = Template::factory()->create();
+
+        $this->actingAs($user)->post(route('books.store'), $this->payload($template, [
+            'characters' => [
+                ['name' => 'Luna', 'role' => 'self', 'isMain' => true],
+                ['name' => 'Grandpa Joe', 'role' => 'grandfather', 'ageGroup' => 'adult'],
+            ],
+        ]))->assertSessionHasNoErrors();
+
+        $this->assertSame('adult', Character::query()->where('name', 'Grandpa Joe')->sole()->age_group);
+        $this->assertNull(Character::query()->where('name', 'Luna')->sole()->age_group);
+
+        $this->actingAs($user)->post(route('books.store'), $this->payload($template, [
+            'characters' => [
+                ['name' => 'Luna', 'isMain' => true, 'ageGroup' => 'teenager'],
+            ],
+        ]))->assertSessionHasErrors('characters.0.ageGroup');
+    }
+
     public function test_guests_are_redirected_to_login(): void
     {
         $template = Template::factory()->create();

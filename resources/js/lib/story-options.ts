@@ -6,17 +6,15 @@ import type { ArtStyle, StoryLanguage } from '@/types/cubfable';
 
 export const ART_STYLES: ArtStyle[] = [
     '3d-animation',
-    'watercolor',
+    'cartoon',
     'storybook',
+    'watercolor',
     'crayon',
-    'gouache',
     'clay-animation',
     'felt-craft',
-    'sticker-art',
-    'comic-book',
+    'paper-lightbox',
     'soft-anime',
-    'collage',
-    'block-world',
+    'comic-book',
 ];
 
 export const LESSONS: string[] = [
@@ -36,6 +34,7 @@ export const LESSONS: string[] = [
 // here, and falls back to English otherwise.
 export const STORY_LANGUAGES: { code: StoryLanguage; native: string }[] = [
     { code: 'en', native: 'English' },
+    { code: 'ar', native: 'العربية' },
     { code: 'es', native: 'Español' },
     { code: 'fr', native: 'Français' },
     { code: 'de', native: 'Deutsch' },

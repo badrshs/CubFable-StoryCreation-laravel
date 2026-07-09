@@ -14,7 +14,14 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import Starfield from '@/components/cubfable/starfield';
+import RestyleDialog from '@/components/restyle-dialog';
 import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Textarea } from '@/components/ui/textarea';
 import { useT } from '@/i18n';
 import { download, index as booksIndex } from '@/routes/books';
@@ -342,22 +349,56 @@ export default function Reader({ book }: ReaderProps) {
                 <h1 className="truncate px-2 text-center font-serif text-lg font-medium text-white">
                     {t('reader.storybookTitle', { name: book.childName })}
                 </h1>
-                {/* The server composes a print-ready PDF; a plain same-origin
-                    anchor (never an Inertia visit) sends the session cookie and
-                    lets the browser save the file. */}
-                <Button
-                    asChild
-                    size="sm"
-                    variant="gold"
-                    className="gap-2 rounded-full"
-                >
-                    <a href={download.url(book.id)} rel="noopener">
-                        <Download className="h-4 w-4" />
-                        <span className="hidden sm:inline">
-                            {t('reader.downloadPdf')}
-                        </span>
-                    </a>
-                </Button>
+                <div className="flex items-center gap-1.5">
+                    {book.status === 'complete' && (
+                        <RestyleDialog
+                            bookId={book.id}
+                            currentStyle={book.artStyle}
+                        />
+                    )}
+                    {/* The server composes the PDF; plain same-origin anchors
+                        (never Inertia visits) send the session cookie and let
+                        the browser save the file. Two variants: print-ready
+                        (bleed + crop marks) and home (trim only). */}
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                size="sm"
+                                variant="gold"
+                                className="gap-2 rounded-full"
+                            >
+                                <Download className="h-4 w-4" />
+                                <span className="hidden sm:inline">
+                                    {t('reader.downloadPdf')}
+                                </span>
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuItem asChild>
+                                <a
+                                    href={download.url(book.id, {
+                                        query: { variant: 'print' },
+                                    })}
+                                    rel="noopener"
+                                    className="cursor-pointer"
+                                >
+                                    {t('reader.downloadPrint')}
+                                </a>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                                <a
+                                    href={download.url(book.id, {
+                                        query: { variant: 'home' },
+                                    })}
+                                    rel="noopener"
+                                    className="cursor-pointer"
+                                >
+                                    {t('reader.downloadHome')}
+                                </a>
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
             </div>
 
             {/* Book spread */}
@@ -451,6 +492,7 @@ export default function Reader({ book }: ReaderProps) {
                                                                 e.target.value,
                                                             )
                                                         }
+                                                        dir="auto"
                                                         className="min-h-[160px] resize-none border-primary/30 bg-white font-serif text-lg leading-relaxed text-[#3a2a1a] focus-visible:border-primary"
                                                         autoFocus
                                                     />
@@ -494,7 +536,10 @@ export default function Reader({ book }: ReaderProps) {
                                                     </div>
                                                 </div>
                                             ) : (
-                                                <p className="font-serif text-xl leading-relaxed text-[#3a2a1a] lg:text-2xl">
+                                                <p
+                                                    dir="auto"
+                                                    className="font-serif text-xl leading-relaxed text-[#3a2a1a] lg:text-2xl"
+                                                >
                                                     {page.text}
                                                 </p>
                                             )}

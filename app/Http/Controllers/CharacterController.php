@@ -49,6 +49,7 @@ class CharacterController extends Controller
                 $character = $request->user()->characters()->create([
                     'name' => $input['name'],
                     'role' => $input['role'] ?? null,
+                    'age_group' => $input['ageGroup'] ?? null,
                     'description' => $input['description'] ?? null,
                 ]);
 
@@ -79,6 +80,10 @@ class CharacterController extends Controller
 
         if (array_key_exists('role', $input)) {
             $character->role = $input['role'];
+        }
+
+        if (array_key_exists('ageGroup', $input)) {
+            $character->age_group = $input['ageGroup'];
         }
 
         if (array_key_exists('description', $input)) {

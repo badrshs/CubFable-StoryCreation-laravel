@@ -16,11 +16,55 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | PDF output
+    |--------------------------------------------------------------------------
+    |
+    | The trim size every storybook PDF is composed at: one of the
+    | App\Services\Pdf\PageSize preset keys, admin-overridable at runtime
+    | through the pdf_page_size setting.
+    |
+    */
+
+    'pdf' => [
+        'page_size' => (string) env('PDF_PAGE_SIZE', 'square-210'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Uploads
+    |--------------------------------------------------------------------------
+    |
+    | Character photo handling: 'original' uploads the untouched file (best
+    | likeness for image models that stylize from the reference), while
+    | 'optimized' downscales in the browser to 768px JPEG (smaller requests,
+    | lower vision-token cost). Admin-overridable at runtime.
+    |
+    */
+
+    'uploads' => [
+        'photo_quality' => (string) env('PHOTO_UPLOAD_QUALITY', 'original'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Registration
     |--------------------------------------------------------------------------
     */
 
     'registration_open' => (bool) env('REGISTRATION_OPEN', true),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Page limits
+    |--------------------------------------------------------------------------
+    |
+    | Bounds for a story template's page count, enforced when templates are
+    | created or edited in the admin area.
+    |
+    */
+
+    'pages_min' => (int) env('PAGES_MIN', 4),
+    'pages_max' => (int) env('PAGES_MAX', 10),
 
     /*
     |--------------------------------------------------------------------------
@@ -48,6 +92,16 @@ return [
                 'openrouter' => env('IMAGE_MODEL_OPENROUTER', 'google/gemini-2.5-flash-image'),
                 'flow' => env('IMAGE_MODEL_FLOW', 'grok-imagine'),
                 'grok' => env('IMAGE_MODEL_GROK', 'grok-imagine-image'),
+                'piapi' => env('IMAGE_MODEL_PIAPI', 'Qubico/flux1-dev-advanced'),
+                'replicate' => env('IMAGE_MODEL_REPLICATE', 'black-forest-labs/flux-kontext-pro'),
+            ],
+            /*
+             * Photo description (vision) normally rides on the text model.
+             * Set this when the text model cannot take image input (e.g.
+             * DeepSeek), so vision stays on a multimodal model.
+             */
+            'vision' => [
+                'openrouter' => env('VISION_MODEL_OPENROUTER', ''),
             ],
         ],
 
@@ -57,6 +111,8 @@ return [
             'openrouter' => env('OPENROUTER_API_KEY', ''),
             'flow' => env('FLOW_IMAGE_API_KEY', ''),
             'grok' => env('XAI_API_KEY', ''),
+            'piapi' => env('PIAPI_API_KEY', ''),
+            'replicate' => env('REPLICATE_API_TOKEN', ''),
         ],
 
         /*
@@ -71,12 +127,34 @@ return [
         'flow_base_url' => env('FLOW_IMAGE_BASE_URL', 'http://127.0.0.1:8787'),
 
         /*
+         * PiAPI's Flux API (images only): IMAGE_PROVIDER=piapi. Reference
+         * images run the subject-preserving Kontext edit task.
+         */
+        'piapi_base_url' => env('PIAPI_BASE_URL', 'https://api.piapi.ai'),
+
+        /*
+         * Replicate (images only): IMAGE_PROVIDER=replicate. Aimed at the
+         * flux-kontext-pro editing model; the reference travels via
+         * Replicate's Files API.
+         */
+        'replicate_base_url' => env('REPLICATE_BASE_URL', 'https://api.replicate.com'),
+
+        /*
          * Some image models cap how many reference images a request may
          * carry (Grok Imagine accepts 3). 0 means unlimited. References are
          * ordered most-important-first, so truncation drops the least
          * important ones.
          */
         'max_image_references' => (int) env('IMAGE_MAX_REFERENCES', 0),
+
+        /*
+         * Render all of a book's pages as ONE coherent set when the engine
+         * supports it (Seedream's sequential generation). Off by default: the
+         * shared group prompt is heavily clipped to fit the engine cap, so
+         * character identity and scene order suffer compared to the full
+         * per-page prompt. Page-by-page is the standard path.
+         */
+        'group_generation' => (bool) env('IMAGE_GROUP_GENERATION', false),
 
         /*
          * What anchors the hero's identity on cover/page images:

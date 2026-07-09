@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ArtStyle;
 use App\Enums\BookStatus;
 use App\Enums\PageStatus;
 use App\Enums\StoryLanguage;
@@ -14,9 +15,11 @@ use App\Models\Character;
 use App\Models\Template;
 use App\Models\User;
 use App\Services\BookImageStorage;
+use App\Services\BookRestyler;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -261,6 +264,33 @@ class BookController extends Controller
     }
 
     /**
+     * Re-render every image of a finished book in a different art style. The
+     * story is kept (only images are paid for again): the book returns to
+     * Pending and the normal generation pipeline regenerates the sheet, cover
+     * and pages - which also makes an interrupted restyle resumable.
+     */
+    public function restyle(Request $request, BookRestyler $restyler, int $id): RedirectResponse
+    {
+        $book = $request->user()->books()->findOrFail($id);
+
+        abort_if($book->status === BookStatus::Draft, 402);
+
+        if (! in_array($book->status, [BookStatus::Complete, BookStatus::Failed], true)) {
+            throw ValidationException::withMessages([
+                'artStyle' => 'This book is still generating; try again when it finishes.',
+            ]);
+        }
+
+        $validated = $request->validate([
+            'artStyle' => ['required', Rule::enum(ArtStyle::class)],
+        ]);
+
+        $restyler->restyle($book, $validated['artStyle']);
+
+        return back();
+    }
+
+    /**
      * The hero is the entry flagged isMain (or the first entry as a fallback).
      *
      * @param  array<int, array<string, mixed>>  $cast
@@ -296,6 +326,7 @@ class BookController extends Controller
         if ($existing !== null) {
             $existing->name = $member['name'];
             $existing->role = $member['role'] ?? $existing->role;
+            $existing->age_group = $member['ageGroup'] ?? $existing->age_group;
             $existing->description = $member['description'] ?? $existing->description;
 
             if (($member['photoUrl'] ?? null) !== null) {
@@ -314,6 +345,7 @@ class BookController extends Controller
         $character = $user->characters()->create([
             'name' => $member['name'],
             'role' => $member['role'] ?? null,
+            'age_group' => $member['ageGroup'] ?? null,
             'description' => $member['description'] ?? null,
         ]);
 

@@ -1,0 +1,653 @@
+import { Head, router, useForm } from '@inertiajs/react';
+import {
+    Check,
+    ChevronDown,
+    Cloud,
+    Eye,
+    Globe,
+    Loader2,
+    MonitorSmartphone,
+    RotateCcw,
+    Sparkles,
+    Zap,
+} from 'lucide-react';
+import { useState } from 'react';
+
+import { Button } from '@/components/ui/button';
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+
+// The admin area is owner-only, so its copy is intentionally English-only;
+// the public app remains fully localized.
+
+type SettingEntry = {
+    value: string | number | boolean | null;
+    default: string | number | boolean | null;
+    overridden: boolean;
+};
+
+type Props = {
+    settings: Record<string, SettingEntry>;
+    pdfPageSizes: { key: string; label: string }[];
+};
+
+const PROVIDER_OPTIONS = {
+    text: ['openai', 'gemini', 'openrouter'],
+    image: [
+        'openai',
+        'gemini',
+        'openrouter',
+        'flow',
+        'grok',
+        'piapi',
+        'replicate',
+    ],
+};
+
+// The one switch that matters day to day: which engine draws the images.
+// Each preset maps to the underlying provider (+ gateway model), so one click
+// applies everywhere - generation, restyles, regenerations, playground.
+type EnginePreset = {
+    id: string;
+    title: string;
+    description: string;
+    icon: React.ComponentType<{ className?: string }>;
+    values: { image_provider: string; image_model_flow?: string };
+};
+
+const ENGINE_PRESETS: EnginePreset[] = [
+    {
+        id: 'openrouter',
+        title: 'OpenRouter',
+        description: 'Grok Imagine via OpenRouter (paid, reliable)',
+        icon: Cloud,
+        values: { image_provider: 'openrouter' },
+    },
+    {
+        id: 'browser-flow',
+        title: 'Browser - Google Flow',
+        description: 'Local browser gateway, free daily quota',
+        icon: MonitorSmartphone,
+        values: { image_provider: 'flow', image_model_flow: 'google-flow' },
+    },
+    {
+        id: 'browser-grok',
+        title: 'Browser - Grok Imagine',
+        description: 'Local browser gateway, free daily quota',
+        icon: MonitorSmartphone,
+        values: { image_provider: 'flow', image_model_flow: 'grok-imagine' },
+    },
+    {
+        id: 'gemini',
+        title: 'Gemini',
+        description: 'Google image model (paid API)',
+        icon: Sparkles,
+        values: { image_provider: 'gemini' },
+    },
+    {
+        id: 'openai',
+        title: 'OpenAI',
+        description: 'gpt-image (paid API)',
+        icon: Globe,
+        values: { image_provider: 'openai' },
+    },
+    {
+        id: 'xai',
+        title: 'xAI direct',
+        description: 'Cheapest paid option - needs XAI_API_KEY in .env',
+        icon: Zap,
+        values: { image_provider: 'grok' },
+    },
+    {
+        id: 'piapi',
+        title: 'PiAPI Flux Kontext',
+        description: 'Flux Kontext edits with the reference photo (paid API)',
+        icon: Sparkles,
+        values: { image_provider: 'piapi' },
+    },
+    {
+        id: 'replicate',
+        title: 'Replicate Kontext Pro',
+        description: 'flux-kontext-pro - needs REPLICATE_API_TOKEN in .env',
+        icon: Cloud,
+        values: { image_provider: 'replicate' },
+    },
+];
+
+function Field({
+    label,
+    hint,
+    overridden,
+    children,
+}: {
+    label: string;
+    hint?: string;
+    overridden?: boolean;
+    children: React.ReactNode;
+}) {
+    return (
+        <div className="space-y-1.5">
+            <Label className="flex items-center gap-2 text-sm">
+                {label}
+                {overridden && (
+                    <span className="rounded-full bg-gold/15 px-2 py-0.5 text-[10px] font-semibold text-gold-foreground dark:text-gold">
+                        override
+                    </span>
+                )}
+            </Label>
+            {children}
+            {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+        </div>
+    );
+}
+
+export default function AdminSettings({ settings, pdfPageSizes }: Props) {
+    const initial: Record<string, string | number | boolean> = {};
+
+    for (const [key, entry] of Object.entries(settings)) {
+        initial[key] = (entry.value ?? '') as string | number | boolean;
+    }
+
+    const form = useForm(initial);
+    const [showAdvanced, setShowAdvanced] = useState(false);
+    const [applying, setApplying] = useState<string | null>(null);
+    const [savingPdfSize, setSavingPdfSize] = useState(false);
+    const [previewBookId, setPreviewBookId] = useState('');
+    const [previewVariant, setPreviewVariant] = useState('home');
+
+    const savePdfSize = () => {
+        router.put(
+            '/admin/settings',
+            { ...form.data },
+            {
+                preserveScroll: true,
+                onStart: () => setSavingPdfSize(true),
+                onFinish: () => setSavingPdfSize(false),
+            },
+        );
+    };
+
+    const openPdfPreview = () => {
+        const query = new URLSearchParams({
+            bookId: previewBookId,
+            size: String(form.data.pdf_page_size ?? ''),
+            variant: previewVariant,
+        });
+
+        window.open(`/admin/settings/pdf-preview?${query}`, '_blank');
+    };
+
+    const submit = (e: React.FormEvent) => {
+        e.preventDefault();
+        form.put('/admin/settings', { preserveScroll: true });
+    };
+
+    const activePresetId =
+        ENGINE_PRESETS.find((preset) => {
+            if (
+                preset.values.image_provider !== settings.image_provider?.value
+            ) {
+                return false;
+            }
+
+            return (
+                preset.values.image_model_flow === undefined ||
+                preset.values.image_model_flow ===
+                    settings.image_model_flow?.value
+            );
+        })?.id ?? null;
+
+    const applyPreset = (preset: EnginePreset) => {
+        router.put(
+            '/admin/settings',
+            { ...form.data, ...preset.values },
+            {
+                preserveScroll: true,
+                onStart: () => setApplying(preset.id),
+                onFinish: () => setApplying(null),
+            },
+        );
+    };
+
+    const text = (key: string, label: string, hint?: string) => (
+        <Field label={label} hint={hint} overridden={settings[key]?.overridden}>
+            <Input
+                value={String(form.data[key] ?? '')}
+                onChange={(e) => form.setData(key, e.target.value)}
+            />
+            {form.errors[key] && (
+                <p className="text-xs text-destructive">{form.errors[key]}</p>
+            )}
+        </Field>
+    );
+
+    const number = (key: string, label: string, hint?: string) => (
+        <Field label={label} hint={hint} overridden={settings[key]?.overridden}>
+            <Input
+                type="number"
+                value={String(form.data[key] ?? '')}
+                onChange={(e) => form.setData(key, Number(e.target.value))}
+            />
+            {form.errors[key] && (
+                <p className="text-xs text-destructive">{form.errors[key]}</p>
+            )}
+        </Field>
+    );
+
+    const select = (
+        key: string,
+        label: string,
+        options: string[],
+        hint?: string,
+    ) => (
+        <Field label={label} hint={hint} overridden={settings[key]?.overridden}>
+            <Select
+                value={String(form.data[key] ?? '')}
+                onValueChange={(value) => form.setData(key, value)}
+            >
+                <SelectTrigger>
+                    <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                    {options.map((option) => (
+                        <SelectItem key={option} value={option}>
+                            {option}
+                        </SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
+            {form.errors[key] && (
+                <p className="text-xs text-destructive">{form.errors[key]}</p>
+            )}
+        </Field>
+    );
+
+    return (
+        <>
+            <Head title="Settings - Admin" />
+            <div className="space-y-6 p-6">
+                <div>
+                    <h1 className="font-serif text-2xl font-semibold">
+                        Settings
+                    </h1>
+                    <p className="text-sm text-muted-foreground">
+                        Changes apply everywhere immediately - generation,
+                        restyles and the playground pick them up on the next
+                        job.
+                    </p>
+                </div>
+
+                {/* The core switch: which engine draws the images. */}
+                <Card className="border-gold/40">
+                    <CardHeader>
+                        <CardTitle>Image engine</CardTitle>
+                        <CardDescription>
+                            One click switches every image the app makes.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                            {ENGINE_PRESETS.map((preset) => {
+                                const active = activePresetId === preset.id;
+                                const Icon = preset.icon;
+
+                                return (
+                                    <button
+                                        key={preset.id}
+                                        type="button"
+                                        onClick={() => applyPreset(preset)}
+                                        disabled={applying !== null}
+                                        className={`flex items-start gap-3 rounded-xl border p-4 text-start transition-all ${
+                                            active
+                                                ? 'border-gold bg-gold/10 shadow-glow'
+                                                : 'border-card-border hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-soft'
+                                        }`}
+                                    >
+                                        <span
+                                            className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${active ? 'bg-gold text-gold-foreground' : 'bg-primary/10 text-primary'}`}
+                                        >
+                                            {applying === preset.id ? (
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                            ) : (
+                                                <Icon className="h-4 w-4" />
+                                            )}
+                                        </span>
+                                        <span>
+                                            <span className="flex items-center gap-2 font-semibold">
+                                                {preset.title}
+                                                {active && (
+                                                    <Check className="h-4 w-4 text-gold-foreground dark:text-gold" />
+                                                )}
+                                            </span>
+                                            <span className="mt-0.5 block text-xs text-muted-foreground">
+                                                {preset.description}
+                                            </span>
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* The PDF trim size, with a real-book preview at any preset
+                    before committing to one. */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Storybook PDF</CardTitle>
+                        <CardDescription>
+                            The page size every downloaded PDF is composed at.
+                            Preview a real book at any size first; nothing is
+                            saved until you hit Save size.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="flex flex-wrap items-end gap-3">
+                            <div className="min-w-64 flex-1">
+                                <Field
+                                    label="Page size"
+                                    overridden={
+                                        settings.pdf_page_size?.overridden
+                                    }
+                                >
+                                    <Select
+                                        value={String(
+                                            form.data.pdf_page_size ?? '',
+                                        )}
+                                        onValueChange={(value) =>
+                                            form.setData('pdf_page_size', value)
+                                        }
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {pdfPageSizes.map((size) => (
+                                                <SelectItem
+                                                    key={size.key}
+                                                    value={size.key}
+                                                >
+                                                    {size.label}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    {form.errors.pdf_page_size && (
+                                        <p className="text-xs text-destructive">
+                                            {form.errors.pdf_page_size}
+                                        </p>
+                                    )}
+                                </Field>
+                            </div>
+                            <Button
+                                type="button"
+                                onClick={savePdfSize}
+                                disabled={savingPdfSize}
+                            >
+                                {savingPdfSize ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Check className="h-4 w-4" />
+                                )}
+                                Save size
+                            </Button>
+                        </div>
+
+                        <div className="flex flex-wrap items-end gap-3 rounded-xl border border-card-border bg-muted/20 p-4">
+                            <Field
+                                label="Try it with book id"
+                                hint="Opens the real PDF in a new tab at the selected size."
+                            >
+                                <Input
+                                    type="number"
+                                    min={1}
+                                    placeholder="e.g. 26"
+                                    className="w-32"
+                                    value={previewBookId}
+                                    onChange={(e) =>
+                                        setPreviewBookId(e.target.value)
+                                    }
+                                />
+                            </Field>
+                            <Field label="Variant">
+                                <Select
+                                    value={previewVariant}
+                                    onValueChange={setPreviewVariant}
+                                >
+                                    <SelectTrigger className="w-44">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="home">
+                                            home (clean)
+                                        </SelectItem>
+                                        <SelectItem value="print">
+                                            print (bleed + marks)
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </Field>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                disabled={previewBookId === ''}
+                                onClick={openPdfPreview}
+                            >
+                                <Eye className="h-4 w-4" /> Preview PDF
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <button
+                    type="button"
+                    onClick={() => setShowAdvanced((value) => !value)}
+                    className="flex items-center gap-2 font-display text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"
+                >
+                    <ChevronDown
+                        className={`h-4 w-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
+                    />
+                    Advanced settings
+                </button>
+
+                {showAdvanced && (
+                    <form onSubmit={submit} className="space-y-6">
+                        <div className="flex justify-end">
+                            <Button type="submit" disabled={form.processing}>
+                                {form.processing ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : form.recentlySuccessful ? (
+                                    <Check className="h-4 w-4" />
+                                ) : null}
+                                Save settings
+                            </Button>
+                        </div>
+
+                        <div className="grid gap-6 lg:grid-cols-2">
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Generation</CardTitle>
+                                    <CardDescription>
+                                        Page bounds and how the images are
+                                        rendered.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        {number('pages_min', 'Pages minimum')}
+                                        {number('pages_max', 'Pages maximum')}
+                                    </div>
+                                    <Field
+                                        label="Group page generation"
+                                        hint="Render all pages as one coherent set when the model supports it (Seedream); others fall back to page-by-page."
+                                        overridden={
+                                            settings.image_group_generation
+                                                ?.overridden
+                                        }
+                                    >
+                                        <label className="flex cursor-pointer items-center gap-2 text-sm">
+                                            <Checkbox
+                                                checked={Boolean(
+                                                    form.data
+                                                        .image_group_generation,
+                                                )}
+                                                onCheckedChange={(checked) =>
+                                                    form.setData(
+                                                        'image_group_generation',
+                                                        checked === true,
+                                                    )
+                                                }
+                                            />
+                                            Generate the whole book in one
+                                            request
+                                        </label>
+                                    </Field>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Providers</CardTitle>
+                                    <CardDescription>
+                                        Who writes text and draws images.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    {select(
+                                        'text_provider',
+                                        'Text provider',
+                                        PROVIDER_OPTIONS.text,
+                                    )}
+                                    {select(
+                                        'image_provider',
+                                        'Image provider',
+                                        PROVIDER_OPTIONS.image,
+                                    )}
+                                    {select(
+                                        'identity_reference',
+                                        'Identity anchor',
+                                        ['photo', 'sheet'],
+                                        'photo: the uploaded photo travels with every image. sheet: one stylized character sheet anchors the book.',
+                                    )}
+                                    {number(
+                                        'max_image_references',
+                                        'Max reference images per request',
+                                        '0 = unlimited.',
+                                    )}
+                                    {select(
+                                        'photo_upload_quality',
+                                        'Photo upload quality',
+                                        ['original', 'optimized'],
+                                        'original: the untouched file reaches the image models (best likeness). optimized: browser downscale to 768px (smaller requests).',
+                                    )}
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Text models</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    {text('text_model_openai', 'OpenAI')}
+                                    {text('text_model_gemini', 'Gemini')}
+                                    {text(
+                                        'text_model_openrouter',
+                                        'OpenRouter',
+                                    )}
+                                    {text(
+                                        'vision_model_openrouter',
+                                        'OpenRouter vision override',
+                                        'Set when the text model cannot read images (e.g. DeepSeek). Empty follows the text model.',
+                                    )}
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Image models</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    {text('image_model_openai', 'OpenAI')}
+                                    {text('image_model_gemini', 'Gemini')}
+                                    {text(
+                                        'image_model_openrouter',
+                                        'OpenRouter',
+                                    )}
+                                    {text('image_model_flow', 'Flow gateway')}
+                                    {text('image_model_grok', 'xAI Grok')}
+                                    {text('image_model_piapi', 'PiAPI Flux')}
+                                    {text('image_model_replicate', 'Replicate')}
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Store</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        {number(
+                                            'price_cents',
+                                            'Price (cents)',
+                                            'Charged once per book.',
+                                        )}
+                                        {select('price_currency', 'Currency', [
+                                            'eur',
+                                            'usd',
+                                            'gbp',
+                                            'try',
+                                        ])}
+                                    </div>
+                                    <Field
+                                        label="Registration open"
+                                        overridden={
+                                            settings.registration_open
+                                                ?.overridden
+                                        }
+                                    >
+                                        <label className="flex cursor-pointer items-center gap-2 text-sm">
+                                            <Checkbox
+                                                checked={Boolean(
+                                                    form.data.registration_open,
+                                                )}
+                                                onCheckedChange={(checked) =>
+                                                    form.setData(
+                                                        'registration_open',
+                                                        checked === true,
+                                                    )
+                                                }
+                                            />
+                                            New accounts can sign up
+                                        </label>
+                                    </Field>
+                                </CardContent>
+                            </Card>
+                        </div>
+
+                        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <RotateCcw className="h-3.5 w-3.5" />
+                            Fields marked "override" differ from .env; the env
+                            value is what you get if the override is removed
+                            from the database.
+                        </p>
+                    </form>
+                )}
+            </div>
+        </>
+    );
+}

@@ -39,8 +39,7 @@
       "Helping Others"
     ],
     "artStyles": [
-      "sticker-art",
-      "geometric"
+      "cartoon"
     ],
     "subjects": [
       "garbage truck",
@@ -67,7 +66,7 @@
     ],
     "artStyles": [
       "watercolor",
-      "gouache"
+      "storybook"
     ],
     "subjects": [
       "steam train",
@@ -93,7 +92,7 @@
       "Friendship"
     ],
     "artStyles": [
-      "geometric",
+      "cartoon",
       "3d-animation"
     ],
     "subjects": [
@@ -120,7 +119,6 @@
       "Hard Work"
     ],
     "artStyles": [
-      "block-world",
       "3d-animation"
     ],
     "subjects": [
@@ -174,8 +172,8 @@
       "Gratitude"
     ],
     "artStyles": [
-      "gouache",
-      "collage"
+      "storybook",
+      "paper-lightbox"
     ],
     "subjects": [
       "tractor",
@@ -229,7 +227,7 @@
     ],
     "artStyles": [
       "3d-animation",
-      "geometric"
+      "cartoon"
     ],
     "subjects": [
       "rocket",
@@ -282,7 +280,7 @@
       "Bravery"
     ],
     "artStyles": [
-      "sticker-art",
+      "cartoon",
       "comic-book"
     ],
     "subjects": [
@@ -364,7 +362,7 @@
     ],
     "artStyles": [
       "3d-animation",
-      "geometric"
+      "cartoon"
     ],
     "subjects": [
       "helicopter",
@@ -391,7 +389,7 @@
     ],
     "artStyles": [
       "watercolor",
-      "collage"
+      "paper-lightbox"
     ],
     "subjects": [
       "ferry",
@@ -417,7 +415,7 @@
       "Caring For Others"
     ],
     "artStyles": [
-      "gouache",
+      "storybook",
       "soft-anime"
     ],
     "subjects": [
@@ -472,7 +470,7 @@
     ],
     "artStyles": [
       "clay-animation",
-      "sticker-art"
+      "cartoon"
     ],
     "subjects": [
       "chef",
@@ -498,8 +496,8 @@
       "Kindness"
     ],
     "artStyles": [
-      "collage",
-      "gouache"
+      "paper-lightbox",
+      "storybook"
     ],
     "subjects": [
       "teacher",
@@ -525,7 +523,7 @@
       "Hard Work"
     ],
     "artStyles": [
-      "block-world",
+      "3d-animation",
       "comic-book"
     ],
     "subjects": [
@@ -553,7 +551,7 @@
     ],
     "artStyles": [
       "watercolor",
-      "gouache"
+      "storybook"
     ],
     "subjects": [
       "monkey",
@@ -579,7 +577,7 @@
       "Care for Nature"
     ],
     "artStyles": [
-      "gouache",
+      "storybook",
       "watercolor"
     ],
     "subjects": [
@@ -660,7 +658,7 @@
       "Belonging"
     ],
     "artStyles": [
-      "sticker-art",
+      "cartoon",
       "clay-animation"
     ],
     "subjects": [
@@ -688,7 +686,7 @@
     ],
     "artStyles": [
       "watercolor",
-      "collage"
+      "paper-lightbox"
     ],
     "subjects": [
       "robin",
@@ -741,7 +739,7 @@
       "Wonder"
     ],
     "artStyles": [
-      "gouache",
+      "storybook",
       "soft-anime"
     ],
     "subjects": [
@@ -796,7 +794,7 @@
     ],
     "artStyles": [
       "3d-animation",
-      "geometric"
+      "cartoon"
     ],
     "subjects": [
       "penguin",
@@ -823,7 +821,7 @@
     ],
     "artStyles": [
       "watercolor",
-      "collage"
+      "paper-lightbox"
     ],
     "subjects": [
       "butterfly",
@@ -849,8 +847,7 @@
       "Hard Work"
     ],
     "artStyles": [
-      "geometric",
-      "sticker-art"
+      "cartoon"
     ],
     "subjects": [
       "bee",
@@ -876,7 +873,7 @@
       "Care for Nature"
     ],
     "artStyles": [
-      "gouache",
+      "storybook",
       "watercolor"
     ],
     "subjects": [
@@ -931,7 +928,7 @@
     ],
     "artStyles": [
       "3d-animation",
-      "gouache"
+      "storybook"
     ],
     "subjects": [
       "elephant",
@@ -957,7 +954,7 @@
       "Family"
     ],
     "artStyles": [
-      "gouache",
+      "storybook",
       "soft-anime"
     ],
     "subjects": [
@@ -1011,7 +1008,7 @@
       "Wonder"
     ],
     "artStyles": [
-      "gouache",
+      "storybook",
       "watercolor"
     ],
     "subjects": [
@@ -1039,7 +1036,7 @@
     ],
     "artStyles": [
       "3d-animation",
-      "geometric"
+      "cartoon"
     ],
     "subjects": [
       "pterosaur",
@@ -1065,7 +1062,7 @@
       "Hard Work"
     ],
     "artStyles": [
-      "sticker-art",
+      "cartoon",
       "comic-book"
     ],
     "subjects": [
@@ -1120,7 +1117,7 @@
     ],
     "artStyles": [
       "watercolor",
-      "gouache"
+      "storybook"
     ],
     "subjects": [
       "fairies",
@@ -1201,7 +1198,7 @@
     ],
     "artStyles": [
       "watercolor",
-      "gouache"
+      "storybook"
     ],
     "subjects": [
       "mermaid",
@@ -1255,7 +1252,7 @@
     ],
     "artStyles": [
       "comic-book",
-      "sticker-art"
+      "cartoon"
     ],
     "subjects": [
       "pirates",
@@ -1335,7 +1332,7 @@
       "Teamwork"
     ],
     "artStyles": [
-      "gouache",
+      "storybook",
       "clay-animation"
     ],
     "subjects": [
@@ -1363,7 +1360,7 @@
     ],
     "artStyles": [
       "watercolor",
-      "collage"
+      "paper-lightbox"
     ],
     "subjects": [
       "forest",
@@ -1417,7 +1414,7 @@
     ],
     "artStyles": [
       "comic-book",
-      "gouache"
+      "storybook"
     ],
     "subjects": [
       "prince",
@@ -1443,8 +1440,8 @@
       "Kindness"
     ],
     "artStyles": [
-      "gouache",
-      "geometric"
+      "storybook",
+      "cartoon"
     ],
     "subjects": [
       "magic-carpet",
@@ -1525,7 +1522,7 @@
     ],
     "artStyles": [
       "clay-animation",
-      "sticker-art"
+      "cartoon"
     ],
     "subjects": [
       "elf",
@@ -1552,7 +1549,7 @@
     ],
     "artStyles": [
       "watercolor",
-      "gouache"
+      "storybook"
     ],
     "subjects": [
       "star-fairy",
@@ -1605,8 +1602,8 @@
       "Courage"
     ],
     "artStyles": [
-      "geometric",
-      "collage"
+      "cartoon",
+      "paper-lightbox"
     ],
     "subjects": [
       "rainbow-bridge",
@@ -1660,7 +1657,7 @@
     ],
     "artStyles": [
       "watercolor",
-      "gouache"
+      "storybook"
     ],
     "subjects": [
       "moon",
@@ -1714,7 +1711,7 @@
     ],
     "artStyles": [
       "3d-animation",
-      "geometric"
+      "cartoon"
     ],
     "subjects": [
       "robot",
@@ -1741,7 +1738,7 @@
     ],
     "artStyles": [
       "comic-book",
-      "gouache"
+      "storybook"
     ],
     "subjects": [
       "inventor",
@@ -1767,8 +1764,8 @@
       "Wonder"
     ],
     "artStyles": [
-      "collage",
-      "gouache"
+      "paper-lightbox",
+      "storybook"
     ],
     "subjects": [
       "weather",
@@ -1795,7 +1792,7 @@
     ],
     "artStyles": [
       "watercolor",
-      "geometric"
+      "cartoon"
     ],
     "subjects": [
       "rainbow",
@@ -1875,8 +1872,8 @@
       "Wonder"
     ],
     "artStyles": [
-      "gouache",
-      "geometric"
+      "storybook",
+      "cartoon"
     ],
     "subjects": [
       "pyramids",
@@ -1902,8 +1899,8 @@
       "Confidence"
     ],
     "artStyles": [
-      "geometric",
-      "gouache"
+      "cartoon",
+      "storybook"
     ],
     "subjects": [
       "greek-temples",
@@ -1929,7 +1926,7 @@
       "Loyalty"
     ],
     "artStyles": [
-      "block-world",
+      "3d-animation",
       "comic-book"
     ],
     "subjects": [
@@ -1957,7 +1954,7 @@
     ],
     "artStyles": [
       "comic-book",
-      "gouache"
+      "storybook"
     ],
     "subjects": [
       "cowboy",
@@ -1984,7 +1981,7 @@
     ],
     "artStyles": [
       "3d-animation",
-      "geometric"
+      "cartoon"
     ],
     "subjects": [
       "flying-cars",
@@ -2011,7 +2008,7 @@
     ],
     "artStyles": [
       "clay-animation",
-      "sticker-art"
+      "cartoon"
     ],
     "subjects": [
       "candy",
@@ -2038,7 +2035,7 @@
     ],
     "artStyles": [
       "watercolor",
-      "gouache"
+      "storybook"
     ],
     "subjects": [
       "giant",
@@ -2065,7 +2062,7 @@
     ],
     "artStyles": [
       "3d-animation",
-      "sticker-art"
+      "cartoon"
     ],
     "subjects": [
       "snow",
@@ -2091,8 +2088,8 @@
       "Respect"
     ],
     "artStyles": [
-      "gouache",
-      "collage"
+      "storybook",
+      "paper-lightbox"
     ],
     "subjects": [
       "savanna",
@@ -2119,7 +2116,7 @@
     ],
     "artStyles": [
       "watercolor",
-      "collage"
+      "paper-lightbox"
     ],
     "subjects": [
       "insects",
@@ -2145,7 +2142,7 @@
       "Teamwork"
     ],
     "artStyles": [
-      "geometric",
+      "cartoon",
       "comic-book"
     ],
     "subjects": [
@@ -2199,7 +2196,7 @@
       "Kindness"
     ],
     "artStyles": [
-      "gouache",
+      "storybook",
       "watercolor"
     ],
     "subjects": [
@@ -2253,8 +2250,8 @@
       "Courage"
     ],
     "artStyles": [
-      "collage",
-      "geometric"
+      "paper-lightbox",
+      "cartoon"
     ],
     "subjects": [
       "moving",
@@ -2307,7 +2304,7 @@
       "Confidence"
     ],
     "artStyles": [
-      "sticker-art",
+      "cartoon",
       "clay-animation"
     ],
     "subjects": [
@@ -2362,7 +2359,7 @@
     ],
     "artStyles": [
       "comic-book",
-      "geometric"
+      "cartoon"
     ],
     "subjects": [
       "dentist",
@@ -2388,7 +2385,7 @@
       "Confidence"
     ],
     "artStyles": [
-      "gouache",
+      "storybook",
       "watercolor"
     ],
     "subjects": [
@@ -2442,7 +2439,7 @@
       "Friendship"
     ],
     "artStyles": [
-      "sticker-art",
+      "cartoon",
       "clay-animation"
     ],
     "subjects": [
@@ -2470,7 +2467,7 @@
     ],
     "artStyles": [
       "watercolor",
-      "gouache"
+      "storybook"
     ],
     "subjects": [
       "friendship",
@@ -2497,7 +2494,7 @@
     ],
     "artStyles": [
       "comic-book",
-      "geometric"
+      "cartoon"
     ],
     "subjects": [
       "anger",
@@ -2550,8 +2547,8 @@
       "Family Love"
     ],
     "artStyles": [
-      "gouache",
-      "collage"
+      "storybook",
+      "paper-lightbox"
     ],
     "subjects": [
       "jealousy",
@@ -2604,8 +2601,8 @@
       "Confidence"
     ],
     "artStyles": [
-      "block-world",
-      "geometric"
+      "3d-animation",
+      "cartoon"
     ],
     "subjects": [
       "perseverance",
@@ -2631,7 +2628,7 @@
       "Helpfulness"
     ],
     "artStyles": [
-      "sticker-art",
+      "cartoon",
       "3d-animation"
     ],
     "subjects": [
@@ -2659,7 +2656,7 @@
     ],
     "artStyles": [
       "clay-animation",
-      "collage"
+      "paper-lightbox"
     ],
     "subjects": [
       "healthy-eating",
@@ -2713,7 +2710,7 @@
     ],
     "artStyles": [
       "watercolor",
-      "gouache"
+      "storybook"
     ],
     "subjects": [
       "tent",
@@ -2740,7 +2737,7 @@
     ],
     "artStyles": [
       "comic-book",
-      "sticker-art"
+      "cartoon"
     ],
     "subjects": [
       "map",
@@ -2766,8 +2763,8 @@
       "Goal Setting"
     ],
     "artStyles": [
-      "geometric",
-      "gouache"
+      "cartoon",
+      "storybook"
     ],
     "subjects": [
       "mountain",
@@ -2793,8 +2790,8 @@
       "Friendship"
     ],
     "artStyles": [
-      "collage",
-      "sticker-art"
+      "paper-lightbox",
+      "cartoon"
     ],
     "subjects": [
       "globe",
@@ -2848,7 +2845,7 @@
     ],
     "artStyles": [
       "watercolor",
-      "gouache"
+      "storybook"
     ],
     "subjects": [
       "sandcastle",
@@ -2901,7 +2898,7 @@
       "Caring"
     ],
     "artStyles": [
-      "gouache",
+      "storybook",
       "watercolor"
     ],
     "subjects": [
@@ -2929,7 +2926,7 @@
     ],
     "artStyles": [
       "comic-book",
-      "geometric"
+      "cartoon"
     ],
     "subjects": [
       "soccer-ball",
@@ -2983,7 +2980,7 @@
     ],
     "artStyles": [
       "soft-anime",
-      "gouache"
+      "storybook"
     ],
     "subjects": [
       "stage",
@@ -3010,7 +3007,7 @@
     ],
     "artStyles": [
       "watercolor",
-      "gouache"
+      "storybook"
     ],
     "subjects": [
       "violin",
@@ -3036,8 +3033,8 @@
       "Embracing Mistakes"
     ],
     "artStyles": [
-      "collage",
-      "sticker-art"
+      "paper-lightbox",
+      "cartoon"
     ],
     "subjects": [
       "paint",
@@ -3063,7 +3060,7 @@
       "Caring For Nature"
     ],
     "artStyles": [
-      "gouache",
+      "storybook",
       "watercolor"
     ],
     "subjects": [
@@ -3117,7 +3114,7 @@
       "Living In The Moment"
     ],
     "artStyles": [
-      "gouache",
+      "storybook",
       "soft-anime"
     ],
     "subjects": [
@@ -3144,7 +3141,7 @@
       "Joy"
     ],
     "artStyles": [
-      "sticker-art",
+      "cartoon",
       "3d-animation"
     ],
     "subjects": [
@@ -3171,8 +3168,8 @@
       "Sharing"
     ],
     "artStyles": [
-      "gouache",
-      "collage"
+      "storybook",
+      "paper-lightbox"
     ],
     "subjects": [
       "pumpkins",
@@ -3226,7 +3223,7 @@
     ],
     "artStyles": [
       "watercolor",
-      "gouache"
+      "storybook"
     ],
     "subjects": [
       "picnic-blanket",

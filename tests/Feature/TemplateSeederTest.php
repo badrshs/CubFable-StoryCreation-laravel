@@ -91,7 +91,7 @@ class TemplateSeederTest extends TestCase
         $template = Template::query()->where('title', 'The Whispering Forest')->firstOrFail();
 
         $this->assertSame(['Kindness', 'Courage', 'Friendship'], $template->life_lessons);
-        $this->assertSame(['watercolor', 'storybook', 'pencil-sketch'], $template->art_styles);
+        $this->assertSame(['watercolor', 'storybook', 'crayon'], $template->art_styles);
         $this->assertSame(['animals', 'nature', 'adventure'], $template->subjects);
         $this->assertSame(['playful', 'classic', 'handwritten'], $template->fonts);
     }

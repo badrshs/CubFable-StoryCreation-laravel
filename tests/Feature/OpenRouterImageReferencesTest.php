@@ -47,6 +47,41 @@ class OpenRouterImageReferencesTest extends TestCase
         });
     }
 
+    public function test_vision_uses_the_dedicated_model_when_the_text_model_is_text_only(): void
+    {
+        config()->set('cubfable.ai.models.text.openrouter', 'deepseek/deepseek-v4-pro');
+        config()->set('cubfable.ai.models.vision.openrouter', 'google/gemini-2.5-flash');
+
+        Http::fake([
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => 'a cheerful child']]],
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]),
+        ]);
+
+        $description = app(OpenRouterProvider::class)->describe('Describe the child.', 'data:image/png;base64,'.self::PNG_BASE64);
+
+        $this->assertSame('a cheerful child', $description);
+        Http::assertSent(fn (Request $request): bool => $request->data()['model'] === 'google/gemini-2.5-flash');
+    }
+
+    public function test_vision_falls_back_to_the_text_model_when_no_vision_model_is_set(): void
+    {
+        config()->set('cubfable.ai.models.text.openrouter', 'google/gemini-2.5-flash');
+        config()->set('cubfable.ai.models.vision.openrouter', '');
+
+        Http::fake([
+            'openrouter.ai/*' => Http::response([
+                'choices' => [['message' => ['content' => 'a cheerful child']]],
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15],
+            ]),
+        ]);
+
+        app(OpenRouterProvider::class)->describe('Describe the child.', 'data:image/png;base64,'.self::PNG_BASE64);
+
+        Http::assertSent(fn (Request $request): bool => $request->data()['model'] === 'google/gemini-2.5-flash');
+    }
+
     public function test_references_are_capped_keeping_the_most_important_first(): void
     {
         config()->set('cubfable.ai.max_image_references', 3);

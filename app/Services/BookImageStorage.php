@@ -15,7 +15,11 @@ use InvalidArgumentException;
  */
 class BookImageStorage
 {
-    private const MAX_DECODED_BYTES = 3 * 1024 * 1024;
+    /**
+     * Generous enough for original phone photos when the photo-quality
+     * setting is 'original' (optimized uploads stay well under this).
+     */
+    private const MAX_DECODED_BYTES = 12 * 1024 * 1024;
 
     /**
      * Decode a user-supplied base64 image data URL, validate it, and store it
@@ -37,7 +41,7 @@ class BookImageStorage
         }
 
         if (strlen($bytes) > self::MAX_DECODED_BYTES) {
-            throw new InvalidArgumentException('Image exceeds the 3MB size limit.');
+            throw new InvalidArgumentException('Image exceeds the 12MB size limit.');
         }
 
         $detectedMime = (new finfo(FILEINFO_MIME_TYPE))->buffer($bytes);

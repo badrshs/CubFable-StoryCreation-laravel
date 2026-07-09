@@ -3,6 +3,7 @@ import {
     BookMarked,
     Library as LibraryIcon,
     LogOut,
+    ShieldCheck,
     Sparkles,
     UserRound,
     Wand2,
@@ -143,6 +144,17 @@ export default function CubFableLayout({ children }: { children: ReactNode }) {
                                             {t('nav.account')}
                                         </Link>
                                     </DropdownMenuItem>
+                                    {user.is_admin && (
+                                        <DropdownMenuItem asChild>
+                                            <Link
+                                                href="/admin"
+                                                className="cursor-pointer gap-2"
+                                            >
+                                                <ShieldCheck className="h-4 w-4" />{' '}
+                                                {t('nav.admin')}
+                                            </Link>
+                                        </DropdownMenuItem>
+                                    )}
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem
                                         onClick={handleLogout}

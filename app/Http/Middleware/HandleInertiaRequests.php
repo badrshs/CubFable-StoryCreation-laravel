@@ -44,6 +44,9 @@ class HandleInertiaRequests extends Middleware
             ],
             'registrationOpen' => Features::enabled(Features::registration()),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            // Whether character photos upload as the untouched original file
+            // or a browser-side 768px downscale (admin runtime setting).
+            'photoUploadQuality' => (string) config('cubfable.uploads.photo_quality', 'original'),
         ];
     }
 }

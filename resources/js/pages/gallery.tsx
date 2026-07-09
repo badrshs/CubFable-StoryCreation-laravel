@@ -6,6 +6,7 @@ import {
     CheckCircle2,
     Loader2,
     Moon,
+    Palette,
     Pencil,
     Plus,
     RefreshCw,
@@ -16,6 +17,7 @@ import type { MouseEvent, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import BookCover from '@/components/cubfable/book-cover';
 import Starfield from '@/components/cubfable/starfield';
+import RestyleDialog from '@/components/restyle-dialog';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -350,6 +352,36 @@ function ShelfBook({ book }: { book: GalleryBook }) {
                         {/* A draft is still the reader's to shape: edit or
                             discard it right from the shelf (always visible,
                             since drafts have no hover-discoverable actions) */}
+                        {/* A finished book can be re-rendered in another art
+                            style (the story is kept). Clicks must not bubble
+                            into the card link - including from the dialog's
+                            portal, whose React events propagate through this
+                            wrapper. */}
+                        {String(book.status) === 'complete' && (
+                            <div
+                                className="absolute end-2 top-2 z-10"
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                }}
+                            >
+                                <RestyleDialog
+                                    bookId={book.id}
+                                    currentStyle={book.artStyle}
+                                    trigger={
+                                        <button
+                                            type="button"
+                                            title={t('restyle.button')}
+                                            aria-label={t('restyle.button')}
+                                            className="hover:glow-gold inline-flex items-center justify-center rounded-full bg-background/80 p-2 text-gold shadow-soft backdrop-blur-sm transition-all duration-300 hover:bg-background focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+                                        >
+                                            <Palette className="h-4 w-4" />
+                                        </button>
+                                    }
+                                />
+                            </div>
+                        )}
+
                         {isDraft && (
                             <div className="absolute end-2 top-2 z-10 flex flex-col gap-1.5">
                                 <Link

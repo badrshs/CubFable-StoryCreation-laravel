@@ -95,7 +95,11 @@ class OpenRouterProvider implements AiProvider
 
     public function describe(string $instruction, string $photoDataUrl): string
     {
-        $model = (string) config('cubfable.ai.models.text.openrouter');
+        // Vision defaults to the text model but can be pinned separately, so a
+        // text-only story model (e.g. DeepSeek) never breaks photo description.
+        $model = (string) ((string) config('cubfable.ai.models.vision.openrouter') !== ''
+            ? config('cubfable.ai.models.vision.openrouter')
+            : config('cubfable.ai.models.text.openrouter'));
 
         $response = Http::timeout(180)->withHeaders($this->headers())->post(self::URL, [
             'model' => $model,

@@ -8,6 +8,7 @@ use App\Models\Book;
 use App\Services\StoryGenerator;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -43,6 +44,13 @@ class GenerateStorybookJob implements ShouldQueue
         if ($book === null || $book->status !== BookStatus::Pending) {
             return;
         }
+
+        Context::add('book_id', $book->id);
+        Log::info('Generation run started.', [
+            'image_provider' => (string) config('cubfable.ai.image_provider'),
+            'art_style' => $book->art_style,
+            'language' => $book->language,
+        ]);
 
         $generator->generateStorybook($book);
     }

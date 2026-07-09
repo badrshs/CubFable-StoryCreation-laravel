@@ -6,6 +6,7 @@ use App\Models\Book;
 use App\Services\StoryGenerator;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -24,9 +25,14 @@ class RegenerateCoverJob implements ShouldQueue
     public int $tries = 1;
 
     /**
-     * Create a new job instance.
+     * Create a new job instance. An optional engine override applies to this
+     * run only (the worker boots fresh per job, so nothing leaks).
      */
-    public function __construct(public int $bookId) {}
+    public function __construct(
+        public int $bookId,
+        public ?string $imageProvider = null,
+        public ?string $imageModel = null,
+    ) {}
 
     /**
      * Execute the job.
@@ -38,6 +44,10 @@ class RegenerateCoverJob implements ShouldQueue
         if ($book === null) {
             return;
         }
+
+        Context::add('book_id', $book->id);
+        Log::info('Regenerating the cover.');
+        EngineOverride::apply($this->imageProvider, $this->imageModel);
 
         $generator->regenerateCover($book);
     }

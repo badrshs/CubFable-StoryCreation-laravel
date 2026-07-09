@@ -12,7 +12,8 @@ class TemplateController extends Controller
     use MapsCubfableProps;
 
     /**
-     * Show the full template catalog.
+     * Show the full template catalog with the filter facets the library wall
+     * offers (distinct themes and the overall age span).
      */
     public function index(): Response
     {
@@ -20,6 +21,7 @@ class TemplateController extends Controller
 
         return Inertia::render('templates', [
             'templates' => $templates->map(fn (Template $template): array => $this->templateProps($template))->all(),
+            'themes' => $templates->pluck('theme')->unique()->sort()->values()->all(),
         ]);
     }
 }

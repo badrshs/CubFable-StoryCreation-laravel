@@ -1,4 +1,4 @@
-import { router } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
     ArrowLeft,
@@ -16,6 +16,7 @@ import {
     Wand2,
 } from 'lucide-react';
 import { useState } from 'react';
+import { PhotoCropDialog } from '@/components/cubfable/photo-crop-dialog';
 import Starfield from '@/components/cubfable/starfield';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,7 +29,6 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { slugify, useI18n, useT } from '@/i18n';
-import { downscaleImage } from '@/lib/downscale-image';
 import {
     ART_STYLES,
     LESSONS,
@@ -43,6 +43,7 @@ import type {
     Book,
     BookFont,
     Character,
+    CharacterAgeGroup,
     StoryLanguage,
     Template,
 } from '@/types';
@@ -51,14 +52,18 @@ type CastRow = {
     characterId: number | null;
     name: string;
     relation: string;
+    ageGroup: CharacterAgeGroup;
     description: string;
     photoUrl: string | null;
 };
 
+// Companions default to adult: they are usually a mom, dad, or grandparent,
+// and an unmarked cast member risks being drawn kid-sized.
 const emptyRow = (): CastRow => ({
     characterId: null,
     name: '',
     relation: '',
+    ageGroup: 'adult',
     description: '',
     photoUrl: null,
 });
@@ -68,16 +73,17 @@ const emptyRow = (): CastRow => ({
 const ART_STYLE_SWATCHES: Record<string, string> = {
     '3d-animation':
         'linear-gradient(135deg, hsl(249 72% 60%), hsl(199 82% 62%))',
+    cartoon: 'linear-gradient(135deg, hsl(42 95% 66%), hsl(199 82% 62%))',
+    storybook: 'linear-gradient(135deg, hsl(32 78% 56%), hsl(266 52% 54%))',
     watercolor: 'linear-gradient(135deg, hsl(199 74% 70%), hsl(7 84% 78%))',
-    geometric: 'linear-gradient(135deg, hsl(266 62% 62%), hsl(42 92% 64%))',
+    crayon: 'linear-gradient(135deg, hsl(7 88% 68%), hsl(140 52% 60%))',
     'clay-animation':
         'linear-gradient(135deg, hsl(7 84% 74%), hsl(32 82% 66%))',
-    'sticker-art': 'linear-gradient(135deg, hsl(42 95% 66%), hsl(320 62% 70%))',
-    'comic-book': 'linear-gradient(135deg, hsl(220 70% 58%), hsl(42 95% 66%))',
-    gouache: 'linear-gradient(135deg, hsl(160 46% 58%), hsl(199 74% 66%))',
+    'felt-craft': 'linear-gradient(135deg, hsl(160 46% 62%), hsl(320 58% 72%))',
+    'paper-lightbox':
+        'linear-gradient(135deg, hsl(232 56% 46%), hsl(42 92% 66%))',
     'soft-anime': 'linear-gradient(135deg, hsl(280 60% 74%), hsl(199 80% 74%))',
-    'block-world': 'linear-gradient(135deg, hsl(140 42% 56%), hsl(42 92% 62%))',
-    collage: 'linear-gradient(135deg, hsl(320 58% 68%), hsl(42 92% 64%))',
+    'comic-book': 'linear-gradient(135deg, hsl(220 70% 58%), hsl(42 95% 66%))',
 };
 
 const STEP_META = [
@@ -180,6 +186,7 @@ export default function CreateWizard({
                   characterId: c.id,
                   name: c.name,
                   relation: c.role ?? '',
+                  ageGroup: c.ageGroup ?? 'adult',
                   description: c.description ?? '',
                   photoUrl: c.photoUrl,
               }))
@@ -189,15 +196,44 @@ export default function CreateWizard({
     const [submitting, setSubmitting] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
 
-    const handleHeroPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
+    // 'original' sends the untouched file to the image models; 'optimized'
+    // downscales in the browser (admin runtime setting).
+    const { photoUploadQuality } = usePage().props as unknown as {
+        photoUploadQuality: string;
+    };
 
-        if (!file) {
+    // Every chosen photo goes through the crop dialog first, so the person
+    // fills the reference frame instead of drowning in background.
+    const [pendingCrop, setPendingCrop] = useState<{
+        file: File;
+        target: 'hero' | number;
+    } | null>(null);
+
+    const applyCrop = (dataUrl: string) => {
+        if (pendingCrop === null) {
             return;
         }
 
-        setPhotoPreview(await downscaleImage(file));
-        setHeroCharacterId(null); // a fresh photo means a new hero, not a reused one
+        if (pendingCrop.target === 'hero') {
+            setPhotoPreview(dataUrl);
+            setHeroCharacterId(null); // a fresh photo means a new hero, not a reused one
+        } else {
+            updateCharacter(pendingCrop.target, {
+                photoUrl: dataUrl,
+                characterId: null,
+            });
+        }
+
+        setPendingCrop(null);
+    };
+
+    const handleHeroPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+
+        if (file) {
+            setPendingCrop({ file, target: 'hero' });
+        }
     };
 
     const pickHero = (value: string) => {
@@ -251,25 +287,22 @@ export default function CreateWizard({
             characterId: c.id,
             name: c.name,
             relation: c.role ?? '',
+            ageGroup: c.ageGroup ?? 'adult',
             description: c.description ?? '',
             photoUrl: c.photoUrl ?? null,
         });
     };
 
-    const handleCharacterPhoto = async (
+    const handleCharacterPhoto = (
         index: number,
         e: React.ChangeEvent<HTMLInputElement>,
     ) => {
         const file = e.target.files?.[0];
+        e.target.value = '';
 
-        if (!file) {
-            return;
+        if (file) {
+            setPendingCrop({ file, target: index });
         }
-
-        updateCharacter(index, {
-            photoUrl: await downscaleImage(file),
-            characterId: null,
-        });
     };
 
     const handleSubmit = () => {
@@ -287,6 +320,7 @@ export default function CreateWizard({
                     characterId: c.characterId ?? undefined,
                     name: c.name,
                     role: c.relation || undefined,
+                    ageGroup: c.ageGroup,
                     description: c.description || undefined,
                     photoUrl: submittablePhoto(c.photoUrl),
                     isMain: false,
@@ -372,6 +406,13 @@ export default function CreateWizard({
 
     return (
         <div className="container mx-auto max-w-3xl px-4 py-10 md:py-14">
+            <PhotoCropDialog
+                file={pendingCrop?.file ?? null}
+                quality={photoUploadQuality}
+                onCropped={applyCrop}
+                onCancel={() => setPendingCrop(null)}
+            />
+
             {/* Eyebrow + title: sets the keepsake, twilight-wonder tone */}
             <div className="mb-8 text-center">
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-gold/15 px-3.5 py-1 font-display text-xs font-bold tracking-[0.18em] text-gold uppercase">
@@ -1156,7 +1197,46 @@ export default function CreateWizard({
                                                                 }
                                                             />
                                                         </div>
-                                                        <div className="col-span-2 space-y-1">
+                                                        <div className="space-y-1">
+                                                            <Label className="text-xs">
+                                                                {t(
+                                                                    'wizard.castAgeGroup',
+                                                                )}
+                                                            </Label>
+                                                            <Select
+                                                                value={
+                                                                    char.ageGroup
+                                                                }
+                                                                onValueChange={(
+                                                                    v,
+                                                                ) =>
+                                                                    updateCharacter(
+                                                                        index,
+                                                                        {
+                                                                            ageGroup:
+                                                                                v as CharacterAgeGroup,
+                                                                        },
+                                                                    )
+                                                                }
+                                                            >
+                                                                <SelectTrigger className="h-9 text-sm">
+                                                                    <SelectValue />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    <SelectItem value="adult">
+                                                                        {t(
+                                                                            'wizard.ageGroupAdult',
+                                                                        )}
+                                                                    </SelectItem>
+                                                                    <SelectItem value="child">
+                                                                        {t(
+                                                                            'wizard.ageGroupChild',
+                                                                        )}
+                                                                    </SelectItem>
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </div>
+                                                        <div className="space-y-1">
                                                             <Label className="text-xs">
                                                                 {t(
                                                                     'wizard.castDescription',

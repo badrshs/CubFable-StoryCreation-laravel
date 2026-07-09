@@ -6,17 +6,15 @@ export type AgeRange = '2-4' | '4-6' | '6-8' | '8-10';
 
 export type ArtStyle =
     | '3d-animation'
-    | 'watercolor'
+    | 'cartoon'
     | 'storybook'
+    | 'watercolor'
     | 'crayon'
-    | 'gouache'
     | 'clay-animation'
     | 'felt-craft'
-    | 'sticker-art'
-    | 'comic-book'
+    | 'paper-lightbox'
     | 'soft-anime'
-    | 'collage'
-    | 'block-world';
+    | 'comic-book';
 
 export type BookFont = 'playful' | 'classic' | 'handwritten' | 'bold';
 
@@ -49,12 +47,16 @@ export type Template = {
     ageMin: number;
     ageMax: number;
     lifeLessons: string[];
+    subjects: string[];
 };
+
+export type CharacterAgeGroup = 'adult' | 'child';
 
 export type Character = {
     id: number;
     name: string;
     role: string | null;
+    ageGroup: CharacterAgeGroup | null;
     description: string | null;
     photoUrl: string | null;
     isMain?: boolean;

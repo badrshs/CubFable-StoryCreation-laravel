@@ -20,10 +20,10 @@ class StoreBookRequest extends FormRequest
     public const int MAX_CAST = 24;
 
     /**
-     * Upper bound on an uploaded photo data URL (the client downscales photos
-     * before submitting, so real payloads stay far below this).
+     * Upper bound on an uploaded photo data URL: base64 of the 12MB decoded
+     * limit, since 'original' photo quality submits the untouched file.
      */
-    private const int MAX_PHOTO_DATA_URL_LENGTH = 2 * 1024 * 1024;
+    private const int MAX_PHOTO_DATA_URL_LENGTH = 16 * 1024 * 1024;
 
     /**
      * Determine if the user is authorized to make this request.
@@ -53,6 +53,7 @@ class StoreBookRequest extends FormRequest
             'characters.*.characterId' => ['nullable', 'integer'],
             'characters.*.name' => ['required', 'string', 'max:120'],
             'characters.*.role' => ['nullable', 'string', 'max:120'],
+            'characters.*.ageGroup' => ['nullable', 'in:adult,child'],
             'characters.*.description' => ['nullable', 'string', 'max:2000'],
             'characters.*.photoUrl' => ['nullable', 'string', 'starts_with:data:image/', 'max:'.self::MAX_PHOTO_DATA_URL_LENGTH],
             'characters.*.isMain' => ['nullable', 'boolean'],

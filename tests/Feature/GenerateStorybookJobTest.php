@@ -57,12 +57,9 @@ class GenerateStorybookJobTest extends TestCase
         Storage::disk('public')->assertExists($book->hero_sheet_path);
 
         // Every generated image persists the prompt that produced it.
-        $this->assertStringContainsString('FRONT COVER', (string) $book->cover_prompt);
-        $this->assertStringContainsString('Character reference sheet', (string) $book->hero_sheet_prompt);
-
-        // The hero is always drawn happy, on the cover and on every page.
-        $this->assertStringContainsString('radiantly happy', (string) $book->cover_prompt);
-        $this->assertStringContainsString('big happy smile', (string) $book->hero_sheet_prompt);
+        $this->assertStringContainsString('Front cover', (string) $book->cover_prompt);
+        $this->assertStringContainsString('Character sheet', (string) $book->hero_sheet_prompt);
+        $this->assertStringContainsString('friendly smile', (string) $book->hero_sheet_prompt);
 
         // The book bible is persisted and drives the art direction.
         $this->assertSame('and the Glowing Lantern', $book->story_bible['subtitle']);
@@ -70,9 +67,19 @@ class GenerateStorybookJobTest extends TestCase
         $this->assertSame('a tiny ladybug', $book->story_bible['motif']);
         $this->assertStringContainsString('and the Glowing Lantern', (string) $book->cover_prompt);
 
+        // Every image prompt uses the structured template: the style up
+        // front, one strict-constraints block, and (because the sheet
+        // travels as a reference) the style-adaptation line.
+        foreach ([(string) $book->cover_prompt, (string) $book->hero_sheet_prompt] as $prompt) {
+            $this->assertStringStartsWith('STYLE: ', $prompt);
+            $this->assertSame(1, substr_count($prompt, 'STRICT CONSTRAINTS:'));
+        }
+
+        $this->assertStringContainsString('never photographic', (string) $book->cover_prompt);
+
         // The cover is designed key art: the story's iconic moment, a themed
         // title treatment, and the find-it motif hidden on the cover too.
-        $this->assertStringContainsString('COVER KEY ART', (string) $book->cover_prompt);
+        $this->assertStringContainsString('Key art below the title:', (string) $book->cover_prompt);
         $this->assertStringContainsString('leaps across the crooked stone bridge', (string) $book->cover_prompt);
         $this->assertStringContainsString('woven from glowing lantern light', (string) $book->cover_prompt);
         $this->assertStringContainsString('Hide a tiny ladybug', (string) $book->cover_prompt);
@@ -96,12 +103,23 @@ class GenerateStorybookJobTest extends TestCase
             $this->assertNotNull($page->image_path);
             Storage::disk('public')->assertExists($page->image_path);
             $this->assertStringContainsString('page '.($index + 1), (string) $page->image_prompt);
-            $this->assertStringContainsString('MOOD IS CRITICAL', (string) $page->image_prompt);
 
-            // The anchored hero is identified by the reference image alone;
-            // no text description competes with it.
-            $this->assertStringContainsString('reference image 1 (the character sheet)', (string) $page->image_prompt);
-            $this->assertStringNotContainsString('Short curly brown hair', (string) $page->image_prompt);
+            // The anchored hero is named against the reference image and
+            // nothing else: the photo IS the identity, and no appearance
+            // text (which could fight it or lock in the photographed
+            // clothes) rides along.
+            $this->assertStringContainsString('Mia: reference image 1.', (string) $page->image_prompt);
+            $this->assertStringNotContainsString('Same character as the reference', (string) $page->image_prompt);
+            $this->assertStringNotContainsString('yellow raincoat', (string) $page->image_prompt);
+            $this->assertStringNotContainsString('green eyes', (string) $page->image_prompt);
+            $this->assertStringNotContainsString('EXACTLY', (string) $page->image_prompt);
+            $this->assertStringNotContainsString('identical', (string) $page->image_prompt);
+
+            // The structured template holds on pages too, and the no-text
+            // rule rides in the constraints block.
+            $this->assertStringStartsWith('STYLE: ', (string) $page->image_prompt);
+            $this->assertSame(1, substr_count((string) $page->image_prompt, 'STRICT CONSTRAINTS:'));
+            $this->assertStringContainsString('No text, letters, numbers, watermarks or logos', (string) $page->image_prompt);
 
             // Every page is art-directed from the bible: shot, stable world,
             // its own lighting note, and the find-it motif.
@@ -274,11 +292,10 @@ class GenerateStorybookJobTest extends TestCase
         $this->assertStringContainsString('Scene: Mia holds a glowing lantern', (string) $page->image_prompt);
         $this->assertStringNotContainsString('SHOT:', (string) $page->image_prompt);
 
-        // The generic subtitle map still covers the cover, with the classic
-        // hero-portrait composition instead of designed key art.
+        // The generic subtitle map still covers the cover, with the simple
+        // hero-in-setting fallback instead of designed key art.
         $this->assertStringContainsString('and the Whispering Forest', (string) $book->cover_prompt);
-        $this->assertStringContainsString('Below the title,', (string) $book->cover_prompt);
-        $this->assertStringNotContainsString('COVER KEY ART', (string) $book->cover_prompt);
+        $this->assertStringContainsString('Mia happy in a forest setting', (string) $book->cover_prompt);
     }
 
     public function test_photo_mode_references_the_original_upload_and_skips_the_sheet(): void
@@ -312,10 +329,51 @@ class GenerateStorybookJobTest extends TestCase
         $this->assertSame(0, Http::recorded(fn (Request $request): bool => str_contains($request->url(), 'images/generations'))->count());
 
         // With the photo attached, the prompt points at the reference and
-        // carries no competing text description of the hero.
+        // carries no competing appearance text at all.
         $pagePrompt = (string) $book->pages()->first()->image_prompt;
-        $this->assertStringContainsString('attached reference image 1', $pagePrompt);
-        $this->assertStringNotContainsString('Short curly brown hair', $pagePrompt);
+        $this->assertStringContainsString('Mia: reference image 1.', $pagePrompt);
+        $this->assertStringNotContainsString('yellow raincoat', $pagePrompt);
+        $this->assertStringNotContainsString('green eyes', $pagePrompt);
+    }
+
+    public function test_google_flow_takes_no_references_and_describes_characters_instead(): void
+    {
+        // google-flow accepts no reference image at all: no photo, no sheet.
+        // Identity must come from the cached appearance text.
+        config()->set('cubfable.ai.identity_reference', 'photo');
+        config()->set('cubfable.ai.image_provider', 'flow');
+        config()->set('cubfable.ai.models.image.flow', 'google-flow');
+
+        $book = $this->pendingBookWithCast();
+
+        $hero = $book->characters()->first();
+        Storage::disk('public')->put("characters/{$hero->id}/photo-test1234.jpg", (string) base64_decode(self::PNG_BASE64, true));
+        $hero->update(['photo_path' => "characters/{$hero->id}/photo-test1234.jpg"]);
+
+        Http::fake([
+            'api.openai.com/v1/chat/completions' => Http::response($this->storyChatResponse()),
+            '127.0.0.1:8787/*' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+        ]);
+
+        (new GenerateStorybookJob($book->id))->handle(app(StoryGenerator::class));
+
+        $book->refresh();
+        $this->assertSame(BookStatus::Complete, $book->status);
+
+        // No sheet was generated: there is nothing to attach it to.
+        $this->assertNull($book->hero_sheet_path);
+
+        // No request carried a reference image.
+        Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '8787')
+            && array_key_exists('image', (array) $request->data()));
+
+        // The hero is described in text instead of pointed at a reference,
+        // and no reference-adaptation wording leaks into this path.
+        $pagePrompt = (string) $book->pages()->first()->image_prompt;
+        $this->assertStringContainsString('Mia: Short curly brown hair', $pagePrompt);
+        $this->assertStringNotContainsString('reference image', $pagePrompt);
+        $this->assertStringNotContainsString('never photographic', $pagePrompt);
+        $this->assertStringContainsString('Short curly brown hair', (string) $book->cover_prompt);
     }
 
     public function test_photo_mode_still_builds_a_sheet_when_there_is_no_photo(): void

@@ -16,7 +16,7 @@ use Illuminate\Database\Eloquent\Relations\Pivot;
 trait MapsCubfableProps
 {
     /**
-     * @return array{id: int, title: string, description: string, theme: string, coverImageUrl: string|null, pageCount: int, ageMin: int, ageMax: int, lifeLessons: array<int, string>}
+     * @return array{id: int, title: string, description: string, theme: string, coverImageUrl: string|null, pageCount: int, ageMin: int, ageMax: int, lifeLessons: array<int, string>, subjects: array<int, string>}
      */
     protected function templateProps(Template $template): array
     {
@@ -30,6 +30,7 @@ trait MapsCubfableProps
             'ageMin' => $template->age_min,
             'ageMax' => $template->age_max,
             'lifeLessons' => $template->life_lessons,
+            'subjects' => $template->subjects ?? [],
         ];
     }
 
@@ -95,6 +96,7 @@ trait MapsCubfableProps
             'id' => $character->id,
             'name' => $character->name,
             'role' => $character->role,
+            'ageGroup' => $character->age_group,
             'description' => $character->description,
             'photoUrl' => $character->photo_url,
         ];

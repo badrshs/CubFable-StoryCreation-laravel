@@ -4,18 +4,25 @@ namespace App\Services;
 
 use App\Enums\BookStatus;
 use App\Enums\PageStatus;
-use App\Enums\StoryLanguage;
 use App\Models\Book;
 use App\Models\Character;
+use App\Models\ImagePrompt;
+use App\Models\ImageVersion;
 use App\Models\Page;
 use App\Models\Template;
 use App\Services\AI\AiManager;
 use App\Services\AI\AppearanceDescriber;
+use App\Services\AI\FlowSessionContext;
 use App\Services\AI\GeneratedImage;
 use App\Services\AI\ImageReference;
 use App\Services\AI\PromptLogContext;
 use App\Services\AI\SafeImageGenerator;
 use App\Services\AI\UsageCollector;
+use App\Services\Prompts\IdentityCapsule;
+use App\Services\Prompts\ImagePromptComposer;
+use App\Services\Prompts\PromptText;
+use App\Services\Prompts\ReferencePolicy;
+use App\Services\Prompts\StoryPromptComposer;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Support\Arr;
@@ -27,64 +34,32 @@ use Throwable;
 
 class StoryGenerator
 {
-    /**
-     * @var array<string, string>
-     */
-    private const ART_STYLE_PROMPTS = [
-        '3d-animation' => 'glossy 3D animated film style like a modern Pixar or DreamWorks movie, soft global illumination, rounded volumetric forms, subsurface-scattered skin, big expressive eyes, gentle depth of field',
-        'watercolor' => "soft watercolor illustration, loose translucent washes, bleeding pigments, visible cold-press paper texture, gentle warm palette, hand-painted children's picture book",
-        'geometric' => 'bold flat geometric illustration, simple clean shapes, mid-century-modern vector art, a limited harmonious palette, crisp edges, tasteful negative space',
-        'clay-animation' => 'stop-motion claymation style, sculpted plasticine characters, soft studio lighting, subtle fingerprint and tooling marks, tactile handmade look',
-        'sticker-art' => 'glossy die-cut sticker style, thick rounded white outlines, bright saturated colors, simple cute shapes, soft drop shadow',
-        'comic-book' => 'comic book and graphic-novel style, bold black ink outlines, dynamic cel shading, halftone dot shading, vivid colors, energetic composition',
-        'gouache' => 'matte gouache painting, opaque rich pigments, confident visible brushstrokes, warm storybook palette, painterly texture',
-        'soft-anime' => 'gentle anime cel-shaded style, soft ambient shading, expressive large eyes, delicate clean linework, dreamy pastel lighting',
-        'block-world' => 'blocky voxel 3D world, cubic stylized characters and props, playful building-block aesthetic, clean bright lighting',
-        'collage' => 'paper-cut collage style, layered torn and cut textured paper, mixed-media handmade feel, soft shadows between the paper layers',
-        'storybook' => 'classic storybook illustration, detailed oil painting, warm golden light, fairy tale style',
-        'crayon' => "child's crayon and colored-pencil drawing, waxy expressive strokes, construction-paper texture, naive charming lines, bright primary colors",
-        'felt-craft' => 'needle-felted wool and fabric craft scene, soft fuzzy textures, hand-stitched details, cozy handmade toy look, gentle studio lighting',
-        // Legacy styles kept so older books still render.
-        'cartoon' => 'vibrant cartoon illustration, bold outlines, bright cheerful colors, animated movie style',
-        'pencil-sketch' => "pencil sketch with light color wash, hand-drawn look, soft texture, illustrated children's book",
-        'digital-art' => "digital illustration, clean lines, vibrant colors, modern children's book style",
-    ];
-
-    /**
-     * English-only cover subtitles, keyed by theme. The cover title is always
-     * English regardless of the story language.
-     *
-     * @var array<string, string>
-     */
-    private const COVER_SUBTITLES = [
-        'forest' => 'and the Whispering Forest',
-        'pirates' => 'and the Sapphire Sea',
-        'space' => 'and the Voyage to the Stars',
-        'kitchen' => 'and the Little Kitchen',
-        'dinosaurs' => 'and the Land of Giants',
-        'rainbow' => 'and the Rainbow Bridge',
-    ];
-
-    /**
-     * Read-aloud craft calibrated per age band, injected into the author
-     * prompt so a 2-4 book and an 8-10 book stop sounding the same.
-     *
-     * @var array<string, string>
-     */
-    private const AGE_WRITING_RULES = [
-        '2-4' => '1-2 very short sentences per page, simple everyday words, lots of repetition and sound words (Boom! Splash!), name objects and colors.',
-        '4-6' => '2-3 short sentences per page, playful rhythm, simple cause and effect, gentle humor, some sound words.',
-        '6-8' => '3-4 sentences per page, richer vocabulary with context clues, a real small challenge and a clever solution, light humor.',
-        '8-10' => '3-5 sentences per page, vivid vocabulary, deeper feelings and a satisfying arc, wit welcome; never talk down to the reader.',
-    ];
-
     public function __construct(
         private AiManager $ai,
         private SafeImageGenerator $safeImages,
         private AppearanceDescriber $appearanceDescriber,
         private BookImageStorage $images,
         private UsageCollector $usage,
+        private FlowSessionContext $flowSession,
+        private StoryPromptComposer $storyPrompts,
+        private ImagePromptComposer $imagePrompts,
+        private ReferencePolicy $references,
+        private IdentityCapsule $identity,
+        private ImageVersionArchiver $versions,
     ) {}
+
+    /**
+     * Key one book run to one gateway conversation, so a session-capable
+     * browser engine keeps every image in one chat (no page reloads); the
+     * gateway re-attaches the reference on every prompt, because a bare
+     * follow-up in a Grok conversation implicitly references the LAST
+     * generated image. Style is part of the key: a restyle starts a fresh
+     * conversation.
+     */
+    private function startFlowSession(Book $book): void
+    {
+        $this->flowSession->key = "book-{$book->id}-{$book->art_style}";
+    }
 
     /**
      * Run the full generation pipeline: story text, cover, then every page
@@ -94,6 +69,7 @@ class StoryGenerator
     {
         try {
             $book->update(['status' => BookStatus::Generating]);
+            $this->startFlowSession($book);
 
             $pageCount = Template::query()->findOrFail($book->template_id)->page_count;
 
@@ -116,23 +92,8 @@ class StoryGenerator
                 // The book bible: localized text plus English art direction
                 // (world, color script, motif, per-page shots).
                 $blueprint = $this->generateStoryBlueprint($book, $pageCount, $cast, $main);
-
-                // Persist the bible before any image work so the cover subtitle
-                // and page regenerations can reuse the same world and lighting.
-                $bible = array_filter(Arr::except($blueprint, ['pages']), fn ($value): bool => $value !== null);
-                $book->update(['story_bible' => $bible !== [] ? $bible : null]);
-
-                foreach ($blueprint['pages'] as $index => $storyPage) {
-                    $pages[] = Page::query()->create([
-                        'book_id' => $book->id,
-                        'page_number' => $index + 1,
-                        'text' => $storyPage['text'],
-                        'scene' => $storyPage['scene'],
-                        'art_direction' => $storyPage['artDirection'],
-                        'image_path' => null,
-                        'status' => PageStatus::Generating,
-                    ]);
-                }
+                $pages = $this->persistBlueprint($book, $blueprint);
+                Log::info('Story blueprint written and persisted.', ['pages' => count($pages)]);
             }
             // Existing pages mean an interrupted run being resumed: the story
             // and bible are already persisted, only missing images remain.
@@ -142,7 +103,7 @@ class StoryGenerator
             // once here instead of independently on every image. In photo
             // mode the original upload leads instead and no sheet is made.
             // A sheet that survived an interrupted run is reused as-is.
-            $anchor = $this->anchorsWithSheet($main)
+            $anchor = $this->references->anchorsWithSheet($main)
                 ? ($this->anchorFor($book) ?? $this->prepareHeroSheet($book, $main))
                 : null;
 
@@ -150,6 +111,20 @@ class StoryGenerator
             // in the UI). Skipped when a previous run already produced one.
             if ($book->cover_image_path === null) {
                 $this->storeCover($book, $main, $anchor);
+            }
+
+            // A fresh book renders every page as ONE coherent set when the
+            // engine supports it (characters and style stay consistent by
+            // construction); any failure or shortfall falls through to the
+            // page-by-page loop below.
+            $pending = array_filter($pages, fn (Page $page): bool => ! ($page->status === PageStatus::Complete && $page->image_path !== null));
+
+            if (count($pending) === count($pages) && $this->groupGenerationAvailable(count($pages))) {
+                try {
+                    $this->storePagesAsGroup($book, $pages, $cast, $main, $anchor);
+                } catch (Throwable $exception) {
+                    Log::warning("Group generation failed; falling back to page-by-page: {$exception->getMessage()}");
+                }
             }
 
             // Pages (sequential to stay within rate limits); pages that
@@ -168,6 +143,7 @@ class StoryGenerator
             }
 
             $book->update(['status' => BookStatus::Complete]);
+            Log::info('Book generation complete.');
         } catch (Throwable $exception) {
             Log::error("Storybook generation failed: {$exception->getMessage()}");
             $book->update(['status' => BookStatus::Failed]);
@@ -182,6 +158,10 @@ class StoryGenerator
     public function regeneratePageIllustration(Page $page, Book $book): void
     {
         try {
+            // Books that predate version tracking get their current image
+            // captured before it is replaced, so it stays restorable.
+            $this->versions->capturePage($book, $page);
+            $this->startFlowSession($book);
             $cast = $this->castFor($book);
             $this->ensureCast($cast, $book->art_style);
             $main = $this->mainCharacter($cast);
@@ -190,7 +170,7 @@ class StoryGenerator
                 throw new RuntimeException('Book has no characters');
             }
 
-            $this->storePageIllustration($page, $book, $cast, $main, $this->anchorsWithSheet($main) ? $this->anchorFor($book) : null);
+            $this->storePageIllustration($page, $book, $cast, $main, $this->references->anchorsWithSheet($main) ? $this->anchorFor($book) : null);
         } catch (Throwable $exception) {
             Log::error("Failed to regenerate page {$page->id}: {$exception->getMessage()}");
             $page->update(['status' => PageStatus::Failed]);
@@ -209,6 +189,10 @@ class StoryGenerator
         $failure = null;
 
         try {
+            // Books that predate version tracking get their current cover
+            // captured before it is replaced, so it stays restorable.
+            $this->versions->captureCover($book);
+            $this->startFlowSession($book);
             $cast = $this->castFor($book);
             $this->ensureCast($cast, $book->art_style);
             $main = $this->mainCharacter($cast);
@@ -217,7 +201,7 @@ class StoryGenerator
                 throw new RuntimeException('Book has no characters');
             }
 
-            $this->storeCover($book, $main, $this->anchorsWithSheet($main) ? $this->anchorFor($book) : null);
+            $this->storeCover($book, $main, $this->references->anchorsWithSheet($main) ? $this->anchorFor($book) : null);
             $book->update(['cover_status' => null]);
         } catch (Throwable $exception) {
             Log::error("Failed to regenerate cover for book {$book->id}: {$exception->getMessage()}");
@@ -249,9 +233,9 @@ class StoryGenerator
             $appearance = '';
 
             try {
-                $appearance = $this->hasUsablePhoto($member)
+                $appearance = $this->references->hasUsablePhoto($member)
                     ? trim($this->appearanceDescriber->describe((new ImageReference((string) $member->photo_path))->dataUrl()))
-                    : trim($this->describeCharacterFromText($member, $artStyle));
+                    : trim($this->ai->generateText($this->identity->textDescriptionPrompt($member, $artStyle)));
             } catch (Throwable $exception) {
                 Log::warning("[ai] appearance for \"{$member->name}\" failed: {$exception->getMessage()}");
             }
@@ -264,23 +248,33 @@ class StoryGenerator
     }
 
     /**
-     * Build a detailed appearance for a character that has no photo, from its
-     * name, role, and any user notes.
+     * Persist a parsed blueprint: the reusable bible before any image work (so
+     * the cover subtitle and page regenerations reuse the same world and
+     * lighting), then one Page row per story page. Returns the created pages.
+     *
+     * @param  array{subtitle: ?string, world: ?string, motif: ?string, refrain: ?string, colorScript: ?list<string>, cover: ?array<string, string>, pages: list<array{text: string, scene: string, artDirection: ?array<string, string>}>}  $blueprint
+     * @return list<Page>
      */
-    private function describeCharacterFromText(Character $member, string $artStyle): string
+    private function persistBlueprint(Book $book, array $blueprint): array
     {
-        $roleClause = $member->role !== null && $member->role !== '' ? " ({$member->role})" : '';
-        $notesClause = $member->description !== null && $member->description !== '' ? " - notes: {$member->description}" : '';
+        $bible = array_filter(Arr::except($blueprint, ['pages']), fn ($value): bool => $value !== null);
+        $book->update(['story_bible' => $bible !== [] ? $bible : null]);
 
-        $prompt = <<<PROMPT
-For a children's storybook in the "{$artStyle}" art style, write a DETAILED, SPECIFIC physical appearance for one character, to be used as a fixed reference so an illustrator draws them IDENTICALLY in every picture.
+        $pages = [];
 
-Character: {$member->name}{$roleClause}{$notesClause}
+        foreach ($blueprint['pages'] as $index => $storyPage) {
+            $pages[] = Page::query()->create([
+                'book_id' => $book->id,
+                'page_number' => $index + 1,
+                'text' => $storyPage['text'],
+                'scene' => $storyPage['scene'],
+                'art_direction' => $storyPage['artDirection'],
+                'image_path' => null,
+                'status' => PageStatus::Generating,
+            ]);
+        }
 
-Include ALL of: hair (color/length/style); facial hair (beard and/or mustache shape/length/color, or "clean-shaven"); eyebrows, eye color and shape, skin tone, face shape, body build; a signature outfit (top, bottom, footwear, each with specific colors); accessories (or "none"). Do NOT mention age. Return ONLY the description text, no preamble.
-PROMPT;
-
-        return trim($this->ai->generateText($prompt));
+        return $pages;
     }
 
     /**
@@ -293,55 +287,53 @@ PROMPT;
      */
     private function generateStoryBlueprint(Book $book, int $pageCount, Collection $cast, Character $main): array
     {
-        $langName = StoryLanguage::tryFrom($book->language)?->label() ?? 'English';
-
-        $others = $cast
-            ->reject(fn (Character $character): bool => $character->id === $main->id)
-            ->map(fn (Character $character): string => $character->name.($character->role !== null && $character->role !== '' ? " ({$character->role})" : ''))
-            ->implode(', ');
-        $othersText = $others !== '' ? $others : 'none';
-        $ageRules = self::AGE_WRITING_RULES[$book->age_range] ?? self::AGE_WRITING_RULES['4-6'];
-
-        $prompt = <<<PROMPT
-You are an award-winning children's picture-book author AND the book's art director. Create a complete book plan for a personalized storybook starring {$main->name} (age {$book->age_range}).
-
-Story details:
-- Setting / world: {$book->theme}
-- What the story is about (the subject - make this central to the plot): {$book->subject}
-- Life lesson: {$book->life_lesson}
-- Art style: {$book->art_style}
-- Additional characters: {$othersText}
-- Story language: {$langName}
-
-WRITING RULES:
-1. Age calibration for {$book->age_range}: {$ageRules}
-2. {$main->name} is the hero and solves the problem through their own idea, courage or kindness - other characters help, they never rescue.
-3. Weave the life lesson through choices and their consequences. NEVER state it as a moral; never write "learned that".
-4. End odd-numbered pages on a small question or surprise so the child wants to turn the page.
-5. Include a short playful refrain (a rhythmic catchphrase or sound words) and repeat it on 2-3 pages, including near the end.
-6. Page "text" is written in {$langName}. Everything else (scene, world, subtitle, motif) is ENGLISH regardless of the story language.
-
-ART DIRECTION RULES:
-7. "world": 2-3 reusable sentences describing the main location(s) - architecture, colors, props, atmosphere. Every page happens in or near this world.
-8. "colorScript": one short lighting/palette note per page (e.g. "warm morning gold"). Across the book the light should travel (e.g. morning to starry night) to mirror the emotional arc.
-9. Every page "scene" object needs:
-   - "shot": one of: wide establishing / medium / close-up / low angle / over-the-shoulder / bird's eye. Vary them - never the same shot twice in a row; open wide, go close at the emotional peak, pull back warm at the end.
-   - "action": what visually happens - specific verbs, who stands where, what hands hold. Name every character present.
-   - "expression": {$main->name}'s emotion, positive and fitting the moment (joyful, curious, focused, amazed, cozy, gently brave). Never sad, crying, scared or distressed.
-   - "detail": one small memorable prop or micro-event unique to this page.
-10. "motif": one tiny visual object (never a main character) hidden somewhere on every page for the child to find.
-11. "subtitle": a charming English cover subtitle, at most 6 words.
-12. "cover": design the front cover like a bestselling published picture book:
-   - "moment": the single most magical, iconic moment of THIS story as cover key art - {$main->name} mid-action and full of wonder (never a static standing pose), with the story's world behind them and room at the top for the title.
-   - "titleStyle": how the hand-lettered title should look, themed to the story (materials, colors, tiny ornaments - e.g. letters entwined with ivy, letters built from brass cogs and springs).
-
-Write exactly {$pageCount} pages. Return ONLY this JSON object (no other text):
-{"subtitle":"...","world":"...","motif":"...","refrain":"...","colorScript":["one note per page"],"cover":{"moment":"...","titleStyle":"..."},"pages":[{"text":"...","scene":{"shot":"...","action":"...","expression":"...","detail":"..."}}]}
-PROMPT;
-
-        $content = $this->ai->generateText($prompt);
+        $content = $this->ai->generateText($this->storyPrompts->authorPrompt($book, $pageCount, $cast, $main));
 
         return $this->parseBlueprint($content, $pageCount);
+    }
+
+    /**
+     * Every prompt generation would compose for this book, with zero AI calls:
+     * the author/art-director prompt, the character sheet (when the identity
+     * anchors on one), the cover, and one page. Books without pages preview a
+     * representative sample page. Powers the admin prompt playground.
+     *
+     * @param  Collection<int, Character>|null  $cast  explicit cast for unsaved sample books
+     * @return array{blueprint: string, sheet: ?string, cover: string, page: string}
+     */
+    public function previewPrompts(Book $book, ?Collection $cast = null): array
+    {
+        $cast ??= $this->castFor($book);
+        $main = $this->mainCharacter($cast);
+
+        if ($main === null) {
+            throw new RuntimeException('Book has no characters');
+        }
+
+        $template = Template::query()->find((int) $book->getAttribute('template_id'));
+        $pageCount = $template !== null ? (int) $template->page_count : 6;
+
+        $anchor = $this->references->anchorsWithSheet($main) ? $this->anchorFor($book) : null;
+
+        $page = $book->exists ? $book->pages()->orderBy('page_number')->first() : null;
+        $page ??= new Page([
+            'page_number' => 1,
+            'text' => "{$main->name} steps into the adventure.",
+            'scene' => "{$main->name} discovers something wonderful at the edge of the {$book->theme}.",
+            'art_direction' => [
+                'shot' => 'wide establishing',
+                'action' => "{$main->name} discovers something wonderful at the edge of the {$book->theme}.",
+                'expression' => 'curious',
+                'detail' => 'a tiny keepsake tucked in their pocket',
+            ],
+        ]);
+
+        return [
+            'blueprint' => $this->storyPrompts->authorPrompt($book, $pageCount, $cast, $main),
+            'sheet' => $this->references->anchorsWithSheet($main) ? $this->imagePrompts->sheet($book, $main)['prompt'] : null,
+            'cover' => $this->imagePrompts->cover($book, $main, $anchor)['prompt'],
+            'page' => $this->imagePrompts->page($book, $page, $cast, $main, $anchor)['prompt'],
+        ];
     }
 
     /**
@@ -391,7 +383,7 @@ PROMPT;
                 $artDirection = [];
 
                 foreach (['shot', 'action', 'expression', 'detail'] as $key) {
-                    $value = trim($this->stringify($rawScene[$key] ?? null));
+                    $value = trim(PromptText::stringify($rawScene[$key] ?? null));
 
                     if ($value !== '') {
                         $artDirection[$key] = $value;
@@ -401,8 +393,8 @@ PROMPT;
                 $flatScene = trim(($artDirection['action'] ?? '').' '.($artDirection['detail'] ?? ''));
 
                 $pages[] = [
-                    'text' => $this->stringify($rawText),
-                    'scene' => $flatScene !== '' ? $flatScene : $this->stringify($rawText),
+                    'text' => PromptText::stringify($rawText),
+                    'scene' => $flatScene !== '' ? $flatScene : PromptText::stringify($rawText),
                     'artDirection' => $artDirection !== [] ? $artDirection : null,
                 ];
 
@@ -410,8 +402,8 @@ PROMPT;
             }
 
             $pages[] = [
-                'text' => $this->stringify($rawText),
-                'scene' => $this->stringify($rawScene ?? $rawText),
+                'text' => PromptText::stringify($rawText),
+                'scene' => PromptText::stringify($rawScene ?? $rawText),
                 'artDirection' => null,
             ];
         }
@@ -420,7 +412,7 @@ PROMPT;
 
         if (is_array($parsed['colorScript'] ?? null)) {
             $colorScript = array_values(array_filter(array_map(
-                fn ($note): string => trim($this->stringify($note)),
+                fn ($note): string => trim(PromptText::stringify($note)),
                 $parsed['colorScript'],
             ), fn (string $note): bool => $note !== ''));
 
@@ -433,8 +425,8 @@ PROMPT;
 
         if (is_array($parsed['cover'] ?? null)) {
             $cover = array_filter([
-                'moment' => $this->bibleLine($parsed['cover']['moment'] ?? null, 600),
-                'titleStyle' => $this->bibleLine($parsed['cover']['titleStyle'] ?? null, 300),
+                'moment' => PromptText::line($parsed['cover']['moment'] ?? null, 600),
+                'titleStyle' => PromptText::line($parsed['cover']['titleStyle'] ?? null, 300),
             ], fn (?string $value): bool => $value !== null);
 
             if ($cover === []) {
@@ -443,29 +435,14 @@ PROMPT;
         }
 
         return [
-            'subtitle' => $this->bibleLine($parsed['subtitle'] ?? null, 60),
-            'world' => $this->bibleLine($parsed['world'] ?? null, 800),
-            'motif' => $this->bibleLine($parsed['motif'] ?? null, 200),
-            'refrain' => $this->bibleLine($parsed['refrain'] ?? null, 200),
+            'subtitle' => PromptText::line($parsed['subtitle'] ?? null, 60),
+            'world' => PromptText::line($parsed['world'] ?? null, 800),
+            'motif' => PromptText::line($parsed['motif'] ?? null, 200),
+            'refrain' => PromptText::line($parsed['refrain'] ?? null, 200),
             'colorScript' => $colorScript,
             'cover' => $cover,
             'pages' => $pages,
         ];
-    }
-
-    /**
-     * A single clean bible value: trimmed, unquoted, length-capped, or null.
-     */
-    private function bibleLine(mixed $value, int $maxLength): ?string
-    {
-        $line = trim(trim($this->stringify($value)), "\"'");
-        $line = trim(preg_replace('/\s+/', ' ', $line) ?? '');
-
-        if ($line === '') {
-            return null;
-        }
-
-        return mb_substr($line, 0, $maxLength);
     }
 
     /**
@@ -476,19 +453,7 @@ PROMPT;
     private function prepareHeroSheet(Book $book, Character $main): ?ImageReference
     {
         try {
-            $image = $this->generateHeroSheetImage($book, $main);
-            $path = sprintf('books/%d/sheet-%s.png', $book->id, Str::lower(Str::random(8)));
-
-            $this->images->storeGenerated($image->bytes, $path);
-
-            $previous = $book->hero_sheet_path;
-            $book->update(['hero_sheet_path' => $path, 'hero_sheet_prompt' => $image->prompt]);
-
-            if ($previous !== $path) {
-                $this->images->delete($previous);
-            }
-
-            return new ImageReference($path, "{$main->name} (character sheet)");
+            return $this->storeHeroSheet($book, $main);
         } catch (Throwable $exception) {
             Log::warning("Hero sheet generation failed for book {$book->id}, continuing without an anchor: {$exception->getMessage()}");
 
@@ -496,63 +461,31 @@ PROMPT;
         }
     }
 
+    /**
+     * Generate, store and record the hero's character sheet, replacing any
+     * previous file. Unlike prepareHeroSheet this surfaces failures to the
+     * caller.
+     */
+    private function storeHeroSheet(Book $book, Character $main): ImageReference
+    {
+        $image = $this->generateHeroSheetImage($book, $main);
+        $path = sprintf('books/%d/sheet-%s.png', $book->id, Str::lower(Str::random(8)));
+
+        $this->images->storeGenerated($image->bytes, $path);
+        $book->update(['hero_sheet_path' => $path, 'hero_sheet_prompt' => $image->prompt]);
+
+        // The replaced file stays on disk as a restorable version.
+        ImageVersion::query()->create(['book_id' => $book->id, 'slot' => 'sheet', 'path' => $path, 'prompt' => $image->prompt, ...$this->currentEngine()]);
+        Log::info('Character sheet stored.', ['path' => $path, 'attempt' => $image->attempt]);
+
+        return new ImageReference($path, "{$main->name} (character sheet)");
+    }
+
     private function generateHeroSheetImage(Book $book, Character $main): GeneratedImage
     {
-        $artStyle = self::ART_STYLE_PROMPTS[$book->art_style] ?? self::ART_STYLE_PROMPTS['storybook'];
-        $usePhoto = $this->hasUsablePhoto($main);
-        $references = $usePhoto ? [new ImageReference((string) $main->photo_path, $main->name)] : [];
-
-        // Reference OR description, never both (see buildScene).
-        $photoNote = $usePhoto
-            ? ' Match the child in the attached reference photo faithfully: same face, hairstyle, hair color, skin tone, eye color and build, redrawn in the art style (an illustration, never a photo).'
-            : '';
-        $appearance = trim((string) $main->appearance);
-        $appearanceClause = ! $usePhoto && $appearance !== '' ? " {$main->name}'s appearance: {$appearance}" : '';
-
-        $prompt = <<<PROMPT
-{$artStyle}. Character reference sheet for a children's picture book.
-
-A single full-body illustration of {$main->name} standing and facing the viewer in a relaxed, friendly pose with a big happy smile, on a plain soft neutral background.{$photoNote}{$appearanceClause}
-
-Exactly one character and nothing else in the frame. The character fills most of the frame so the face, hair, skin tone, outfit, colors and shoes are all clearly visible. No text, letters, numbers, labels, borders or logos anywhere.
-PROMPT;
+        ['prompt' => $prompt, 'references' => $references] = $this->imagePrompts->sheet($book, $main);
 
         return $this->safeImages->generate($prompt, '1024x1536', $references, 'character sheet', new PromptLogContext($book->id, 'character-sheet'));
-    }
-
-    /**
-     * Whether the hero's identity anchors on a generated character sheet.
-     * In photo mode the original upload is the reference instead, so a
-     * sheet is only worth making when there is no photo to lean on.
-     */
-    private function anchorsWithSheet(Character $main): bool
-    {
-        $preference = strtolower(trim((string) config('cubfable.ai.identity_reference', 'sheet')));
-
-        return ! ($preference === 'photo' && $this->hasUsablePhoto($main));
-    }
-
-    /**
-     * How many reference images can actually travel with one request, so
-     * prompts only describe characters whose reference cannot be sent.
-     * The flow gateway carries exactly one and Grok Imagine three; other
-     * providers follow the configurable cap (0 = unlimited).
-     */
-    private function referenceBudget(): int
-    {
-        $provider = (string) config('cubfable.ai.image_provider');
-
-        if ($provider === 'flow') {
-            return 1;
-        }
-
-        $cap = (int) config('cubfable.ai.max_image_references', 0);
-
-        if ($provider === 'grok') {
-            return $cap > 0 ? min($cap, 3) : 3;
-        }
-
-        return $cap;
     }
 
     /**
@@ -572,147 +505,11 @@ PROMPT;
     }
 
     /**
-     * Build the per-page prompt + reference photos for the characters in a
-     * scene. Art-directed pages get a film-brief layout (shot, setting from
-     * the book bible, lighting from the color script, a find-it motif);
-     * legacy pages keep the original single-sentence format.
-     *
-     * @param  Collection<int, Character>  $cast
-     * @return array{prompt: string, references: list<ImageReference>}
-     */
-    private function buildScene(Book $book, Page $page, Collection $cast, Character $main, ?ImageReference $anchor = null): array
-    {
-        $artStyle = self::ART_STYLE_PROMPTS[$book->art_style] ?? self::ART_STYLE_PROMPTS['storybook'];
-        $pageNumberLabel = "page {$page->page_number}";
-        $sceneText = ($page->scene ?? '') !== '' ? (string) $page->scene : $page->text;
-        $matchText = ($page->scene ?? '').' '.$page->text;
-
-        $direction = $page->art_direction ?? [];
-        $bible = $book->story_bible ?? [];
-        $expression = $direction['expression'] ?? null;
-
-        // The main character is always present; others only when named in the scene.
-        $present = $cast->filter(
-            fn (Character $character): bool => $character->id === $main->id || $this->nameInText($character->name, $matchText),
-        );
-
-        // Reference OR description, never both: a character whose reference
-        // image actually travels with the request is identified by that image
-        // alone (a text description would only fight it). Descriptions remain
-        // for characters whose reference cannot be sent.
-        $budget = $this->referenceBudget();
-        $references = [];
-        $anchorNote = '';
-
-        if ($anchor !== null) {
-            $references[] = $anchor;
-            $anchorNote = "\nReference image 1 is the definitive character sheet for {$main->name}: copy their face, hairstyle, skin tone, outfit, colors and proportions EXACTLY as drawn there. It is already in the target art style; reproduce that exact rendition of {$main->name} in this scene.\n";
-        }
-
-        $lines = [];
-
-        foreach ($present as $member) {
-            $anchorCoversMember = $member->id === $main->id && $anchor !== null;
-
-            $withinBudget = ! $anchorCoversMember
-                && $this->hasUsablePhoto($member)
-                && ($budget === 0 || count($references) < $budget);
-
-            if ($withinBudget) {
-                $references[] = new ImageReference((string) $member->photo_path, $member->name);
-            }
-
-            $roleText = $member->id === $main->id
-                ? 'the main character/hero'
-                : ($member->role !== null && $member->role !== '' ? $member->role : 'character');
-
-            $expressionNote = $member->id === $main->id && $expression !== null
-                ? " Expression: {$expression}."
-                : '';
-
-            if ($withinBudget) {
-                $position = count($references);
-                $lines[] = "- {$member->name}, {$roleText}: shown in attached reference image {$position} - copy their face, hair, build and outfit exactly from it, redrawn in the art style (an illustration, never a photo).{$expressionNote}";
-            } elseif ($anchorCoversMember) {
-                $lines[] = "- {$member->name}, {$roleText}: shown in attached reference image 1 (the character sheet).{$expressionNote}";
-            } else {
-                $appearance = trim((string) $member->appearance);
-                $lines[] = "- {$member->name}, {$roleText}: ".($appearance !== '' ? $appearance : '(invent a consistent look)').$expressionNote;
-            }
-        }
-
-        $characterLines = implode("\n", $lines);
-        $sceneBlock = $this->sceneBlock($book, $page, $direction, $bible, $sceneText);
-
-        $prompt = <<<PROMPT
-{$artStyle}. Children's picture book illustration for {$pageNumberLabel}.
-
-{$sceneBlock}
-
-Characters in this scene (draw each EXACTLY and consistently):
-{$characterLines}
-{$anchorNote}
-CHARACTER CONSISTENCY IS CRITICAL: keep every character's face, hair, facial hair, skin tone, outfit and accessories identical in every scene. Never change a character's appearance between pages. Redraw any photo-referenced character in the {$book->art_style} art style (an illustration, never a photo).
-
-MOOD IS CRITICAL: {$main->name}'s expression must match the scene while staying positive - joyful when the moment is happy; curious, calm, focused, amazed or gently brave when it is quiet, mysterious or challenging. NEVER draw {$main->name} or any child looking sad, crying, scared, angry or distressed, and do NOT force a big smile where it does not fit the moment.
-
-Style: warm, magical, safe for children, 16:9 landscape format, detailed background showing the {$book->theme} setting. No text or letters in the image. High quality illustration.
-PROMPT;
-
-        return ['prompt' => $prompt, 'references' => $references];
-    }
-
-    /**
-     * The scene header: a film-brief block when art direction exists, the
-     * legacy single-sentence format otherwise.
-     *
-     * @param  array<string, string>  $direction
-     * @param  array<string, mixed>  $bible
-     */
-    private function sceneBlock(Book $book, Page $page, array $direction, array $bible, string $sceneText): string
-    {
-        if ($direction === []) {
-            $subjectNote = $book->subject !== ''
-                ? "\nThe story is about {$book->subject} - reflect it in the setting, props and action wherever it fits naturally."
-                : '';
-
-            return "Scene: {$sceneText}{$subjectNote}";
-        }
-
-        $shot = $direction['shot'] ?? 'medium';
-        $action = $direction['action'] ?? $sceneText;
-
-        $lines = ["SHOT: {$shot}: {$action}"];
-
-        $world = trim($this->stringify($bible['world'] ?? null));
-        $colorScript = is_array($bible['colorScript'] ?? null) ? $bible['colorScript'] : [];
-        $lighting = trim($this->stringify($colorScript[$page->page_number - 1] ?? null));
-
-        $setting = trim(($world !== '' ? $world.' ' : '').($lighting !== '' ? "Lighting: {$lighting}." : ''));
-
-        if ($setting !== '') {
-            $lines[] = "SETTING: {$setting}";
-        }
-
-        if (($direction['detail'] ?? '') !== '') {
-            $lines[] = "DETAIL: {$direction['detail']}";
-        }
-
-        $motif = trim($this->stringify($bible['motif'] ?? null));
-
-        if ($motif !== '') {
-            $lines[] = "FIND-IT MOTIF: hide {$motif} somewhere subtle in the scene for the child to discover.";
-        }
-
-        return implode("\n", $lines);
-    }
-
-    /**
      * @param  Collection<int, Character>  $cast
      */
     private function generatePageImage(Page $page, Book $book, Collection $cast, Character $main, ?ImageReference $anchor = null): GeneratedImage
     {
-        ['prompt' => $prompt, 'references' => $references] = $this->buildScene($book, $page, $cast, $main, $anchor);
+        ['prompt' => $prompt, 'references' => $references] = $this->imagePrompts->page($book, $page, $cast, $main, $anchor);
 
         return $this->safeImages->generate($prompt, '1536x1024', $references, "page {$page->page_number}", new PromptLogContext($book->id, 'page', $page->id));
     }
@@ -724,54 +521,7 @@ PROMPT;
      */
     private function generateCoverImage(Book $book, Character $main, ?ImageReference $anchor = null): GeneratedImage
     {
-        $artStyle = self::ART_STYLE_PROMPTS[$book->art_style] ?? self::ART_STYLE_PROMPTS['storybook'];
-        $bible = $book->story_bible ?? [];
-        $bibleSubtitle = $this->bibleLine($bible['subtitle'] ?? null, 60);
-        $coverSubtitle = $bibleSubtitle ?? (self::COVER_SUBTITLES[$book->theme] ?? 'A Magical Adventure');
-        $titleStyle = $this->bibleLine($bible['cover']['titleStyle'] ?? null, 300)
-            ?? 'large, flowing, golden hand-lettered script';
-        $coverMoment = $this->bibleLine($bible['cover']['moment'] ?? null, 600);
-        $motif = $this->bibleLine($bible['motif'] ?? null, 200);
-
-        // Reference OR description, never both (see buildScene).
-        $coverReferences = [];
-        $photoNote = '';
-        $identityClause = '';
-
-        if ($anchor !== null) {
-            $coverReferences[] = $anchor;
-            $identityClause = " The attached reference image is the definitive character sheet for {$main->name}: copy their face, hairstyle, skin tone, outfit and colors exactly as drawn there.";
-        } elseif ($this->hasUsablePhoto($main)) {
-            $coverReferences[] = new ImageReference((string) $main->photo_path, $main->name);
-            $photoNote = ', the child shown in the attached reference photo (keep their face, hair and outfit clearly recognizable but redrawn in the art style, never a photograph)';
-        } else {
-            $appearance = trim((string) $main->appearance);
-            $identityClause = $appearance !== '' ? " {$main->name}'s appearance: {$appearance}." : '';
-        }
-
-        $subjectClause = $book->subject !== ''
-            ? ", with the story's subject ({$book->subject}) clearly featured in the scene"
-            : '';
-
-        $keyArt = $coverMoment !== null
-            ? "COVER KEY ART (below the title): {$coverMoment} {$main->name}{$photoNote} is the focal point, mid-moment and full of joyful wonder.{$identityClause}"
-            : "Below the title, {$main->name}{$photoNote} as the central hero, beaming with a big joyful smile, in a {$book->theme} setting{$subjectClause}.{$identityClause}";
-
-        $motifLine = $motif !== null
-            ? "\nHide {$motif} somewhere subtle in the artwork."
-            : '';
-
-        $coverPrompt = <<<PROMPT
-A professionally illustrated children's storybook FRONT COVER, portrait orientation, in the {$book->art_style} art style ({$artStyle}). Compose it like a bestselling published picture-book cover: clear focal hierarchy (title first, then {$main->name}, then the world), gentle negative space around the title, and real depth with foreground and background layers.
-
-TITLE TEXT (render it directly in the artwork at the top, beautifully and spelled EXACTLY, in English, clearly legible - this is the ONLY text anywhere on the cover):
-  - First line: "{$main->name}" as {$titleStyle}.
-  - Second line: "{$coverSubtitle}" in a smaller elegant classic serif.
-
-{$keyArt} {$main->name} must look radiantly happy - never sad, scared or upset.{$motifLine}
-
-Leave a small clean margin around the edges (a decorative frame is added separately - do NOT draw a border yourself). Warm, magical, richly detailed, with the title clearly readable at the top. Spell the title exactly as written; do not add any other words or letters.
-PROMPT;
+        ['prompt' => $coverPrompt, 'references' => $coverReferences] = $this->imagePrompts->cover($book, $main, $anchor);
 
         return $this->safeImages->generate($coverPrompt, '1024x1536', $coverReferences, 'cover', new PromptLogContext($book->id, 'cover'));
     }
@@ -786,13 +536,11 @@ PROMPT;
         $path = sprintf('books/%d/cover-%s.png', $book->id, Str::lower(Str::random(8)));
 
         $this->images->storeGenerated($image->bytes, $path);
-
-        $previous = $book->cover_image_path;
         $book->update(['cover_image_path' => $path, 'cover_prompt' => $image->prompt]);
 
-        if ($previous !== $path) {
-            $this->images->delete($previous);
-        }
+        // The replaced file stays on disk as a restorable version.
+        ImageVersion::query()->create(['book_id' => $book->id, 'slot' => 'cover', 'path' => $path, 'prompt' => $image->prompt, ...$this->currentEngine()]);
+        Log::info('Cover stored.', ['path' => $path, 'attempt' => $image->attempt]);
     }
 
     /**
@@ -807,13 +555,173 @@ PROMPT;
         $path = sprintf('books/%d/pages/%d-%s.png', $book->id, $page->page_number, Str::lower(Str::random(8)));
 
         $this->images->storeGenerated($image->bytes, $path);
-
-        $previous = $page->image_path;
         $page->update(['image_path' => $path, 'image_prompt' => $image->prompt, 'status' => PageStatus::Complete]);
 
-        if ($previous !== $path) {
-            $this->images->delete($previous);
+        // The replaced file stays on disk as a restorable version.
+        ImageVersion::query()->create(['book_id' => $book->id, 'page_id' => $page->id, 'page_number' => $page->page_number, 'slot' => 'page', 'path' => $path, 'prompt' => $image->prompt, ...$this->currentEngine()]);
+        Log::info("Page {$page->page_number} illustration stored.", ['path' => $path, 'attempt' => $image->attempt]);
+    }
+
+    /**
+     * Whether the whole page set can render as one grouped request.
+     */
+    private function groupGenerationAvailable(int $pageCount): bool
+    {
+        return $pageCount > 1
+            && (bool) config('cubfable.ai.group_generation')
+            && $this->ai->supportsImageGroups();
+    }
+
+    /**
+     * Render the pages as one coherent set - or, when the whole book cannot
+     * fit one request (prompt cap or the engine's 15-image budget), as the
+     * fewest contiguous batches that do fit. Every batch carries the same
+     * references, and batches after the first also carry a finished page
+     * from the first batch as a style anchor so the whole book stays one
+     * look. Anything unfitting or unreturned falls to the per-page loop.
+     *
+     * @param  list<Page>  $pages
+     * @param  Collection<int, Character>  $cast
+     */
+    private function storePagesAsGroup(Book $book, array $pages, Collection $cast, Character $main, ?ImageReference $anchor): void
+    {
+        $batches = $this->planGroupBatches($book, $pages, $cast, $main, $anchor);
+
+        if ($batches === []) {
+            Log::info('No grouped batch layout fits the engine limits; using page-by-page generation.', ['pages' => count($pages)]);
+
+            return;
         }
+
+        Log::info(count($batches) === 1
+            ? 'Rendering all pages as one coherent set.'
+            : 'Rendering the pages as '.count($batches).' coherent batches (style-anchored to the first).', [
+                'pages' => count($pages),
+                'batches' => array_map(fn (array $batch): int => count($batch), $batches),
+            ]);
+
+        $styleAnchor = null;
+
+        foreach ($batches as $batchPages) {
+            ['prompt' => $prompt, 'references' => $references] = $this->imagePrompts->pageGroup($book, $batchPages, $cast, $main, $anchor, $styleAnchor);
+
+            $images = $this->ai->generateImageGroup($prompt, '1536x1024', $references, count($batchPages));
+
+            foreach (array_values($batchPages) as $index => $page) {
+                if (! isset($images[$index])) {
+                    Log::warning('The group returned fewer images than pages; the rest generate page-by-page.', [
+                        'returned' => count($images),
+                        'pages' => count($batchPages),
+                    ]);
+
+                    return;
+                }
+
+                $this->persistGroupPageImage($book, $page, $images[$index], $prompt);
+
+                if ($styleAnchor === null) {
+                    $styleAnchor = new ImageReference((string) $page->image_path, 'style anchor');
+                }
+            }
+        }
+    }
+
+    /**
+     * Split the pages into the fewest contiguous batches where every batch
+     * fits both the prompt-character cap and the engine's total image
+     * budget. Empty when no layout of 2+ page batches fits.
+     *
+     * @param  list<Page>  $pages
+     * @param  Collection<int, Character>  $cast
+     * @return list<list<Page>>
+     */
+    private function planGroupBatches(Book $book, array $pages, Collection $cast, Character $main, ?ImageReference $anchor): array
+    {
+        $total = count($pages);
+        $maxBatches = max(1, min(4, intdiv($total, 2)));
+
+        for ($batchCount = 1; $batchCount <= $maxBatches; $batchCount++) {
+            $batches = array_chunk($pages, (int) ceil($total / $batchCount));
+            $allFit = true;
+
+            foreach ($batches as $index => $batchPages) {
+                if (! $this->groupBatchFits($book, $batchPages, $cast, $main, $anchor, needsStyleAnchor: $index > 0)) {
+                    $allFit = false;
+
+                    break;
+                }
+            }
+
+            if ($allFit) {
+                return $batches;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Whether one candidate batch fits the engine limits. Later batches
+     * reserve room for the style-anchor reference and its constraint line.
+     *
+     * @param  list<Page>  $batchPages
+     * @param  Collection<int, Character>  $cast
+     */
+    private function groupBatchFits(Book $book, array $batchPages, Collection $cast, Character $main, ?ImageReference $anchor, bool $needsStyleAnchor): bool
+    {
+        ['prompt' => $prompt, 'references' => $references] = $this->imagePrompts->pageGroup($book, $batchPages, $cast, $main, $anchor);
+
+        $referenceCount = count($references) + ($needsStyleAnchor ? 1 : 0);
+        $charBudget = 3800 - ($needsStyleAnchor ? 150 : 0);
+
+        return mb_strlen($prompt) <= $charBudget
+            && count($batchPages) <= 15 - $referenceCount;
+    }
+
+    /**
+     * Store one page image produced by a grouped render: same storage,
+     * version and journal treatment as the per-page path.
+     */
+    private function persistGroupPageImage(Book $book, Page $page, string $bytes, string $prompt): void
+    {
+        $path = sprintf('books/%d/pages/%d-%s.png', $book->id, $page->page_number, Str::lower(Str::random(8)));
+
+        $this->images->storeGenerated($bytes, $path);
+        $page->update(['image_path' => $path, 'image_prompt' => $prompt, 'status' => PageStatus::Complete]);
+
+        ImageVersion::query()->create(['book_id' => $book->id, 'page_id' => $page->id, 'page_number' => $page->page_number, 'slot' => 'page', 'path' => $path, 'prompt' => $prompt, ...$this->currentEngine()]);
+
+        try {
+            ImagePrompt::query()->create([
+                'book_id' => $book->id,
+                'page_id' => $page->id,
+                'purpose' => 'page',
+                'attempt' => 1,
+                'variant' => 'group',
+                'prompt' => $prompt,
+                'accepted' => true,
+            ]);
+        } catch (Throwable $exception) {
+            Log::warning("Failed to journal a grouped image prompt: {$exception->getMessage()}");
+        }
+
+        Log::info("Page {$page->page_number} illustration stored (group).", ['path' => $path]);
+    }
+
+    /**
+     * The image engine in effect for this process, stamped onto every stored
+     * image version so model experiments stay attributable.
+     *
+     * @return array{engine_provider: string, engine_model: string}
+     */
+    private function currentEngine(): array
+    {
+        $provider = (string) config('cubfable.ai.image_provider');
+
+        return [
+            'engine_provider' => $provider,
+            'engine_model' => (string) config("cubfable.ai.models.image.{$provider}"),
+        ];
     }
 
     /**
@@ -840,57 +748,5 @@ PROMPT;
         $pivot = $character->relationLoaded('pivot') ? $character->getRelation('pivot') : null;
 
         return $pivot instanceof Pivot && (bool) $pivot->getAttribute('is_main');
-    }
-
-    /**
-     * True when a stored photo is a usable reference image on the public disk.
-     */
-    private function hasUsablePhoto(Character $character): bool
-    {
-        return $character->photo_path !== null
-            && $character->photo_path !== ''
-            && Storage::disk('public')->exists($character->photo_path);
-    }
-
-    /**
-     * Script-aware word-boundary check. `\b` is ASCII-only and never fires
-     * around non-Latin names (Arabic, CJK, Cyrillic...), which would silently
-     * drop those characters from every scene. Use Unicode letter/number
-     * lookarounds instead.
-     */
-    private function nameInText(string $name, string $text): bool
-    {
-        $name = trim($name);
-
-        if ($name === '') {
-            return false;
-        }
-
-        $pattern = '/(?<![\p{L}\p{N}])'.preg_quote($name, '/').'(?![\p{L}\p{N}])/iu';
-
-        try {
-            $result = preg_match($pattern, $text);
-        } catch (Throwable) {
-            $result = false;
-        }
-
-        if ($result === false) {
-            return mb_stripos($text, $name) !== false;
-        }
-
-        return $result === 1;
-    }
-
-    private function stringify(mixed $value): string
-    {
-        if (is_string($value)) {
-            return $value;
-        }
-
-        if (is_scalar($value)) {
-            return (string) $value;
-        }
-
-        return '';
     }
 }

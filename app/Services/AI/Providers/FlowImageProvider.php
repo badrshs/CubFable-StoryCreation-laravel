@@ -4,6 +4,7 @@ namespace App\Services\AI\Providers;
 
 use App\Exceptions\ImageContentRejectedException;
 use App\Services\AI\Contracts\AiProvider;
+use App\Services\AI\FlowSessionContext;
 use App\Services\AI\ImageReference;
 use App\Services\AI\UsageCollector;
 use App\Services\AI\UsageEvent;
@@ -24,7 +25,10 @@ class FlowImageProvider implements AiProvider
      */
     private const int TIMEOUT_SECONDS = 600;
 
-    public function __construct(private UsageCollector $usage) {}
+    public function __construct(
+        private UsageCollector $usage,
+        private FlowSessionContext $session,
+    ) {}
 
     public function text(string $prompt, int $maxTokens): string
     {
@@ -49,6 +53,13 @@ class FlowImageProvider implements AiProvider
         // most-important-first (character sheet, then the hero photo).
         if ($references !== []) {
             $payload['image'] = $references[0]->dataUrl();
+        }
+
+        // Conversation continuity on session-capable engines (browser Grok):
+        // every request in a book's run carries the same key, so the gateway
+        // uploads the reference once and later images reuse the conversation.
+        if ($this->session->key !== null) {
+            $payload['session'] = $this->session->key;
         }
 
         $response = Http::timeout(self::TIMEOUT_SECONDS)

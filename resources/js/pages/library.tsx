@@ -1,4 +1,4 @@
-import { Link, router, useForm } from '@inertiajs/react';
+import { Link, router, useForm, usePage } from '@inertiajs/react';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
     BookOpen,
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { useState } from 'react';
+import { PhotoCropDialog } from '@/components/cubfable/photo-crop-dialog';
 import Starfield from '@/components/cubfable/starfield';
 import {
     AlertDialog,
@@ -34,13 +35,19 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useT } from '@/i18n';
-import { downscaleImage } from '@/lib/downscale-image';
 import { easeOutSoft, fadeUp, staggerContainer } from '@/lib/motion';
 import characterRoutes from '@/routes/characters';
 import templateRoutes from '@/routes/templates';
-import type { Character } from '@/types';
+import type { Character, CharacterAgeGroup } from '@/types';
 
 type LibraryProps = {
     characters: Character[];
@@ -56,6 +63,7 @@ type EditorState = { mode: 'create' } | { mode: 'edit'; character: Character };
 type CharacterFormData = {
     name: string;
     role: string;
+    ageGroup: CharacterAgeGroup;
     description: string;
     photoUrl: string | null;
 };
@@ -82,11 +90,11 @@ function CharacterEditor({
     } = useForm<CharacterFormData>({
         name: '',
         role: '',
+        ageGroup: 'adult',
         description: '',
         photoUrl: null,
     });
 
-    const [processingPhoto, setProcessingPhoto] = useState(false);
     // Whether this editing session replaced or removed the photo. The stored
     // photo arrives as a /storage/... URL, which the backend must never
     // receive back as if it were a fresh data-URL upload.
@@ -108,19 +116,20 @@ function CharacterEditor({
                     ? {
                           name: state.character.name,
                           role: state.character.role ?? '',
+                          ageGroup: state.character.ageGroup ?? 'adult',
                           description: state.character.description ?? '',
                           photoUrl: state.character.photoUrl ?? null,
                       }
                     : {
                           name: '',
                           role: '',
+                          ageGroup: 'adult',
                           description: '',
                           photoUrl: null,
                       },
             );
             clearErrors();
             setError(null);
-            setProcessingPhoto(false);
             setPhotoChanged(false);
         }
     }
@@ -128,23 +137,27 @@ function CharacterEditor({
     const isEdit = state?.mode === 'edit';
     const saving = processing;
 
-    const handlePhoto = async (e: ChangeEvent<HTMLInputElement>) => {
+    const { photoUploadQuality } = usePage().props as unknown as {
+        photoUploadQuality: string;
+    };
+
+    // Every chosen photo goes through the crop dialog first, so the person
+    // fills the reference frame.
+    const [cropFile, setCropFile] = useState<File | null>(null);
+
+    const handlePhoto = (e: ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
+        e.target.value = '';
 
-        if (!file) {
-            return;
+        if (file) {
+            setCropFile(file);
         }
+    };
 
-        setProcessingPhoto(true);
-
-        try {
-            setData('photoUrl', await downscaleImage(file));
-            setPhotoChanged(true);
-        } catch {
-            setError(t('library.photoError'));
-        } finally {
-            setProcessingPhoto(false);
-        }
+    const applyCrop = (dataUrl: string) => {
+        setData('photoUrl', dataUrl);
+        setPhotoChanged(true);
+        setCropFile(null);
     };
 
     const handleSubmit = (e: FormEvent) => {
@@ -164,6 +177,7 @@ function CharacterEditor({
         transform((current) => ({
             name: current.name.trim(),
             role: current.role.trim() || null,
+            ageGroup: current.ageGroup,
             description: current.description.trim() || null,
             ...(includePhoto ? { photoUrl: current.photoUrl ?? null } : {}),
         }));
@@ -185,6 +199,12 @@ function CharacterEditor({
             open={!!state}
             onOpenChange={(open) => (!open ? onClose() : undefined)}
         >
+            <PhotoCropDialog
+                file={cropFile}
+                quality={photoUploadQuality}
+                onCropped={applyCrop}
+                onCancel={() => setCropFile(null)}
+            />
             <DialogContent className="max-w-lg">
                 <DialogHeader>
                     <DialogTitle className="font-serif text-2xl">
@@ -210,14 +230,7 @@ function CharacterEditor({
                                 aria-label={t('library.photoLabel')}
                                 className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
                             />
-                            {processingPhoto ? (
-                                <div className="flex h-full w-full items-center justify-center text-primary">
-                                    <Loader2
-                                        className="h-6 w-6 animate-spin"
-                                        aria-hidden
-                                    />
-                                </div>
-                            ) : data.photoUrl ? (
+                            {data.photoUrl ? (
                                 <img
                                     src={data.photoUrl}
                                     alt={t('library.photoPreviewAlt', {
@@ -246,7 +259,7 @@ function CharacterEditor({
                             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                                 {t('library.photoHint')}
                             </p>
-                            {data.photoUrl && !processingPhoto && (
+                            {data.photoUrl && (
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -314,6 +327,43 @@ function CharacterEditor({
                                 className="text-sm font-medium text-destructive"
                             >
                                 {errors.role}
+                            </p>
+                        )}
+                    </div>
+
+                    {/* Age group: an unmarked companion (mom, dad, grandpa)
+                        risks being drawn kid-sized in the illustrations. */}
+                    <div className="space-y-1.5">
+                        <Label htmlFor="character-age-group">
+                            {t('library.ageGroupLabel')}
+                        </Label>
+                        <Select
+                            value={data.ageGroup}
+                            onValueChange={(v) =>
+                                setData('ageGroup', v as CharacterAgeGroup)
+                            }
+                        >
+                            <SelectTrigger
+                                id="character-age-group"
+                                className="h-11 rounded-xl"
+                            >
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="adult">
+                                    {t('library.ageGroupAdult')}
+                                </SelectItem>
+                                <SelectItem value="child">
+                                    {t('library.ageGroupChild')}
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+                        {errors.ageGroup && (
+                            <p
+                                role="alert"
+                                className="text-sm font-medium text-destructive"
+                            >
+                                {errors.ageGroup}
                             </p>
                         )}
                     </div>

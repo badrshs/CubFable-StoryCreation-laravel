@@ -3,6 +3,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { initializeTheme } from '@/hooks/use-appearance';
 import { LanguageProvider } from '@/i18n';
+import AdminLayout from '@/layouts/admin-layout';
 import AppLayout from '@/layouts/app-layout';
 import AuthLayout from '@/layouts/auth-layout';
 import CubFableLayout from '@/layouts/cubfable-layout';
@@ -16,6 +17,8 @@ createInertiaApp({
         switch (true) {
             case name === 'reader':
                 return null;
+            case name.startsWith('admin/'):
+                return AdminLayout;
             case name.startsWith('auth/'):
                 return AuthLayout;
             case name.startsWith('settings/'):

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Exceptions\ImageContentRejectedException;
 use App\Models\AiUsage;
 use App\Services\AI\AiManager;
+use App\Services\AI\FlowSessionContext;
 use App\Services\AI\ImageReference;
 use App\Services\AI\UsageCollector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -51,6 +52,30 @@ class FlowImageProviderTest extends TestCase
                 && ! array_key_exists('image', $data)
                 && ! $request->hasHeader('Authorization');
         });
+    }
+
+    public function test_a_session_key_travels_with_every_request_when_set(): void
+    {
+        Http::fake([
+            '127.0.0.1:8787/*' => Http::response($this->gatewayResponse()),
+        ]);
+
+        app(FlowSessionContext::class)->key = 'book-9-crayon';
+
+        app(AiManager::class)->generateImage('page one', '1536x1024');
+
+        Http::assertSent(fn (Request $request): bool => $request->data()['session'] === 'book-9-crayon');
+    }
+
+    public function test_no_session_key_is_sent_without_a_context(): void
+    {
+        Http::fake([
+            '127.0.0.1:8787/*' => Http::response($this->gatewayResponse()),
+        ]);
+
+        app(AiManager::class)->generateImage('page one', '1536x1024');
+
+        Http::assertSent(fn (Request $request): bool => ! array_key_exists('session', $request->data()));
     }
 
     public function test_only_the_most_important_reference_is_attached(): void

@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Storage;
  * @property int $user_id
  * @property string $name
  * @property string|null $role
+ * @property string|null $age_group
  * @property string|null $description
  * @property string|null $photo_path
  * @property string|null $appearance
@@ -28,6 +29,7 @@ use Illuminate\Support\Facades\Storage;
     'user_id',
     'name',
     'role',
+    'age_group',
     'description',
     'photo_path',
     'appearance',
