@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Book;
+use App\Services\AI\ImageSizePolicy;
+use App\Services\AI\Replicate\ReplicateModelCatalog;
 use App\Services\AppSettings;
 use App\Services\Pdf\PageSize;
 use App\Services\Pdf\StorybookPdfBuilder;
@@ -20,11 +22,13 @@ class SettingController extends Controller
      * The runtime settings form: every registered key with its effective
      * value, its env-backed default, and whether the DB overrides it.
      */
-    public function index(AppSettings $settings): Response
+    public function index(AppSettings $settings, ReplicateModelCatalog $catalog): Response
     {
         return Inertia::render('admin/settings', [
             'settings' => $settings->all(),
             'pdfPageSizes' => PageSize::options(),
+            'replicateEngines' => $catalog->options(),
+            'imageAspectRatios' => ImageSizePolicy::selectableRatios(),
         ]);
     }
 
@@ -39,11 +43,12 @@ class SettingController extends Controller
             'bookId' => ['required', 'integer', 'exists:books,id'],
             'size' => ['required', Rule::in(PageSize::keys())],
             'variant' => ['required', 'in:home,print'],
+            'fit' => ['nullable', 'in:crop,full,overlay'],
         ]);
 
         $book = Book::query()->findOrFail((int) $validated['bookId']);
 
-        $pdfBytes = $builder->build($book, $validated['variant'], $validated['size']);
+        $pdfBytes = $builder->build($book, $validated['variant'], $validated['size'], $validated['fit'] ?? null);
 
         return response($pdfBytes, 200, [
             'Content-Type' => 'application/pdf',
@@ -75,7 +80,12 @@ class SettingController extends Controller
             'identity_reference' => ['required', 'in:sheet,photo'],
             'max_image_references' => ['required', 'integer', 'between:0,8'],
             'image_group_generation' => ['required', 'boolean'],
+            'image_quality' => ['required', 'in:standard,high,max'],
+            'image_aspect_ratio' => ['required', Rule::in(ImageSizePolicy::selectableRatios())],
+            'cover_image_provider' => ['nullable', 'in:openai,gemini,openrouter,flow,grok,piapi,replicate'],
+            'cover_image_model' => ['nullable', 'string', 'max:200'],
             'pdf_page_size' => ['required', Rule::in(PageSize::keys())],
+            'pdf_image_fit' => ['required', 'in:crop,full,overlay'],
             'photo_upload_quality' => ['required', 'in:original,optimized'],
             'price_cents' => ['required', 'integer', 'between:100,100000'],
             'price_currency' => ['required', 'in:eur,usd,gbp,try'],
@@ -86,6 +96,10 @@ class SettingController extends Controller
 
         // The vision override is optional; empty string means "follow text model".
         $validated['vision_model_openrouter'] = (string) ($validated['vision_model_openrouter'] ?? '');
+
+        // The cover engine is optional too; empty means "same as main engine".
+        $validated['cover_image_provider'] = (string) ($validated['cover_image_provider'] ?? '');
+        $validated['cover_image_model'] = (string) ($validated['cover_image_model'] ?? '');
 
         $settings->set($validated);
 

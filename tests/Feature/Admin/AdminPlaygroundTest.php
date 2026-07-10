@@ -67,7 +67,7 @@ class AdminPlaygroundTest extends TestCase
                 'templateId' => $template->id,
                 'childName' => 'Nour',
                 'ageRange' => '6-8',
-                'artStyle' => 'crayon',
+                'artStyle' => 'watercolor',
                 'language' => 'ar',
             ])
             ->assertOk()
@@ -75,7 +75,7 @@ class AdminPlaygroundTest extends TestCase
 
         $this->assertStringContainsString('Nour', $response['prompts']['blueprint']);
         $this->assertStringContainsString('Arabic', $response['prompts']['blueprint']);
-        $this->assertStringContainsString('crayon', $response['prompts']['cover']);
+        $this->assertStringContainsString('watercolor', $response['prompts']['cover']);
 
         Http::assertNothingSent();
     }
@@ -110,6 +110,49 @@ class AdminPlaygroundTest extends TestCase
             ->json();
 
         $this->assertStringStartsWith('data:image/png;base64,', $response['dataUrl']);
+    }
+
+    public function test_run_image_honors_a_replicate_engine_override(): void
+    {
+        config()->set('cubfable.ai.keys.replicate', 'test-token');
+        config()->set('cubfable.ai.replicate_base_url', 'https://api.replicate.com');
+
+        Http::fake([
+            'api.replicate.com/v1/models/bytedance/seedream-5-pro/predictions' => Http::response([
+                'id' => 'pred-pg',
+                'status' => 'succeeded',
+                'output' => ['https://replicate.delivery/pg.png'],
+            ]),
+            'replicate.delivery/pg.png' => Http::response((string) base64_decode(self::PNG_BASE64, true)),
+        ]);
+
+        $response = $this->actingAs($this->admin())
+            ->postJson('/admin/playground/run-image', [
+                'prompt' => 'A cozy fox.',
+                'provider' => 'replicate',
+                'model' => 'bytedance/seedream-5-pro',
+            ])
+            ->assertOk()
+            ->json();
+
+        $this->assertStringStartsWith('data:image/png;base64,', $response['dataUrl']);
+        $this->assertDatabaseHas('ai_usage', ['provider' => 'replicate', 'model' => 'bytedance/seedream-5-pro', 'book_id' => null]);
+    }
+
+    public function test_the_playground_exposes_the_replicate_engine_catalog(): void
+    {
+        // The dev-mode SSR gateway is an HTTP call; stub it so
+        // preventStrayRequests does not trip on rendering the page.
+        Http::fake(['*__inertia_ssr*' => Http::response(['head' => [], 'body' => ''])]);
+
+        $this->withoutVite()
+            ->actingAs($this->admin())
+            ->get('/admin/playground')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('admin/playground')
+                ->where('replicateEngines.0.model', 'bytedance/seedream-5-pro')
+                ->has('replicateEngines.0.cost'));
     }
 
     public function test_non_admins_get_404(): void

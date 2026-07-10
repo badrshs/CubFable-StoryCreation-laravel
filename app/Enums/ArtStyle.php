@@ -13,10 +13,6 @@ enum ArtStyle: string
     case Cartoon = 'cartoon';
     case Storybook = 'storybook';
     case Watercolor = 'watercolor';
-    case Crayon = 'crayon';
-    case ClayAnimation = 'clay-animation';
-    case FeltCraft = 'felt-craft';
-    case PaperLightbox = 'paper-lightbox';
     case SoftAnime = 'soft-anime';
     case ComicBook = 'comic-book';
 }

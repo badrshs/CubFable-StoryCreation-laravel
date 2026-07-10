@@ -14,7 +14,6 @@ use App\Services\AI\AiManager;
 use App\Services\StoryGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
@@ -39,17 +38,9 @@ class GroupGenerationTest extends TestCase
         config()->set('cubfable.ai.group_generation', true);
         config()->set('cubfable.ai.identity_reference', 'photo');
 
-        // Seedream's schema: image array input, ratio presets, and the
-        // sequential-generation capability that unlocks group mode.
-        Cache::put('replicate.input-schema.bytedance/seedream-4.5', [
-            'prompt' => ['type' => 'string'],
-            'image_input' => ['type' => 'array', 'items' => ['type' => 'string', 'format' => 'uri']],
-            'size' => ['default' => '2K'],
-            'aspect_ratio' => ['default' => 'match_input_image'],
-            'sequential_image_generation' => ['default' => 'disabled'],
-            'max_images' => ['type' => 'integer'],
-        ], now()->addHour());
-
+        // Seedream 4.5 is a cataloged engine: its image array input, ratio
+        // presets and sequential-generation capability come from the
+        // catalog, so no schema is seeded and no metadata fetch happens.
         Storage::fake('public');
         Http::preventStrayRequests();
         Sleep::fake();
@@ -259,15 +250,21 @@ class GroupGenerationTest extends TestCase
 
         $this->assertFalse(app(AiManager::class)->supportsImageGroups() && (bool) config('cubfable.ai.group_generation'));
 
-        // A kontext-style schema (no sequential generation) never groups.
+        // Kontext-style single-image editors never group.
         config()->set('cubfable.ai.group_generation', true);
         config()->set('cubfable.ai.models.image.replicate', 'black-forest-labs/flux-kontext-pro');
-        Cache::put('replicate.input-schema.black-forest-labs/flux-kontext-pro', [
-            'prompt' => ['type' => 'string'],
-            'input_image' => ['type' => 'string'],
-            'aspect_ratio' => ['type' => 'string'],
-        ], now()->addHour());
 
         $this->assertFalse(app(AiManager::class)->supportsImageGroups());
+
+        // Seedream 5 Pro dropped sequential generation: despite the family
+        // name, its catalog entry gates it out of the group path.
+        config()->set('cubfable.ai.models.image.replicate', 'bytedance/seedream-5-pro');
+
+        $this->assertFalse(app(AiManager::class)->supportsImageGroups());
+
+        // Seedream 5 Lite and 4.5 keep it.
+        config()->set('cubfable.ai.models.image.replicate', 'bytedance/seedream-5-lite');
+
+        $this->assertTrue(app(AiManager::class)->supportsImageGroups());
     }
 }

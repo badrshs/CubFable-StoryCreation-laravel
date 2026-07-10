@@ -132,7 +132,7 @@ PROMPT;
         $coverPrompt = <<<PROMPT
 STYLE: {$artStyle}.
 
-Front cover artwork for a children's picture book, portrait format.
+Front cover artwork for a children's picture book, {$this->orientationPhrase()}.
 
 Title, lettered into the artwork at the top and spelled exactly:
 - "{$main->name}" - {$titleStyle}
@@ -219,7 +219,7 @@ PROMPT;
         $prompt = <<<PROMPT
 STYLE: {$artStyle}.
 
-Children's picture book illustration for {$pageNumberLabel}, 16:9 landscape, warm and magical, with a detailed {$book->theme} background.
+Children's picture book illustration for {$pageNumberLabel}, {$this->orientationPhrase()}, warm and magical, with a detailed {$book->theme} background.
 
 {$sceneBlock}
 
@@ -353,7 +353,7 @@ PROMPT;
             $prompt = <<<PROMPT
 STYLE: {$artStyle}.
 
-Illustrate {$count} scenes of one children's picture book as {$count} separate images, 16:9 landscape, warm and magical, with a detailed {$book->theme} background.
+Illustrate {$count} scenes of one children's picture book as {$count} separate images, {$this->orientationPhrase()}, warm and magical, with a detailed {$book->theme} background.
 
 {$worldLine}{$scenes}
 {$motifLine}
@@ -369,6 +369,26 @@ PROMPT;
         }
 
         return ['prompt' => $prompt, 'references' => $references];
+    }
+
+    /**
+     * The orientation wording every book image prompt carries, derived from
+     * the configured aspect ratio so the words never fight the requested
+     * canvas (e.g. "9:16 portrait", "3:2 landscape", "square").
+     */
+    private function orientationPhrase(): string
+    {
+        $ratio = trim((string) config('cubfable.ai.image_aspect_ratio', '9:16'));
+
+        if (preg_match('/^(\d+):(\d+)$/', $ratio, $matches) !== 1) {
+            return '9:16 portrait';
+        }
+
+        return match (true) {
+            (int) $matches[1] > (int) $matches[2] => "{$ratio} landscape",
+            (int) $matches[1] < (int) $matches[2] => "{$ratio} portrait",
+            default => 'square',
+        };
     }
 
     /**

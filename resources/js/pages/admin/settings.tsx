@@ -44,6 +44,19 @@ type SettingEntry = {
 type Props = {
     settings: Record<string, SettingEntry>;
     pdfPageSizes: { key: string; label: string }[];
+    replicateEngines: ReplicateEngineOption[];
+    imageAspectRatios: string[];
+};
+
+type ReplicateEngineOption = {
+    provider: string;
+    model: string;
+    label: string;
+    description: string;
+    cost: string;
+    costDetail: string;
+    supportsGroups: boolean;
+    maxReferences: number;
 };
 
 const PROVIDER_OPTIONS = {
@@ -60,17 +73,24 @@ const PROVIDER_OPTIONS = {
 };
 
 // The one switch that matters day to day: which engine draws the images.
-// Each preset maps to the underlying provider (+ gateway model), so one click
-// applies everywhere - generation, restyles, regenerations, playground.
+// Each preset maps to the underlying provider (+ model where it matters), so
+// one click applies everywhere - generation, restyles, regenerations,
+// playground. The Replicate catalog engines are prepended from the server,
+// one preset per model.
 type EnginePreset = {
     id: string;
     title: string;
     description: string;
+    cost?: string;
     icon: React.ComponentType<{ className?: string }>;
-    values: { image_provider: string; image_model_flow?: string };
+    values: {
+        image_provider: string;
+        image_model_flow?: string;
+        image_model_replicate?: string;
+    };
 };
 
-const ENGINE_PRESETS: EnginePreset[] = [
+const STATIC_ENGINE_PRESETS: EnginePreset[] = [
     {
         id: 'openrouter',
         title: 'OpenRouter',
@@ -120,13 +140,6 @@ const ENGINE_PRESETS: EnginePreset[] = [
         icon: Sparkles,
         values: { image_provider: 'piapi' },
     },
-    {
-        id: 'replicate',
-        title: 'Replicate Kontext Pro',
-        description: 'flux-kontext-pro - needs REPLICATE_API_TOKEN in .env',
-        icon: Cloud,
-        values: { image_provider: 'replicate' },
-    },
 ];
 
 function Field({
@@ -156,7 +169,12 @@ function Field({
     );
 }
 
-export default function AdminSettings({ settings, pdfPageSizes }: Props) {
+export default function AdminSettings({
+    settings,
+    pdfPageSizes,
+    replicateEngines,
+    imageAspectRatios,
+}: Props) {
     const initial: Record<string, string | number | boolean> = {};
 
     for (const [key, entry] of Object.entries(settings)) {
@@ -169,6 +187,33 @@ export default function AdminSettings({ settings, pdfPageSizes }: Props) {
     const [savingPdfSize, setSavingPdfSize] = useState(false);
     const [previewBookId, setPreviewBookId] = useState('');
     const [previewVariant, setPreviewVariant] = useState('home');
+    // The Replicate model field starts in custom (free text) mode only when
+    // the stored value is not a catalog engine.
+    const [replicateCustomModel, setReplicateCustomModel] = useState(
+        !replicateEngines.some(
+            (engine) =>
+                engine.model === String(settings.image_model_replicate?.value),
+        ),
+    );
+
+    // One preset card per Replicate catalog engine (primary lineup), then
+    // the other providers.
+    const enginePresets: EnginePreset[] = [
+        ...replicateEngines.map(
+            (engine): EnginePreset => ({
+                id: `replicate:${engine.model}`,
+                title: `Replicate ${engine.label}`,
+                description: engine.description,
+                cost: engine.costDetail,
+                icon: Cloud,
+                values: {
+                    image_provider: 'replicate',
+                    image_model_replicate: engine.model,
+                },
+            }),
+        ),
+        ...STATIC_ENGINE_PRESETS,
+    ];
 
     const savePdfSize = () => {
         router.put(
@@ -187,6 +232,7 @@ export default function AdminSettings({ settings, pdfPageSizes }: Props) {
             bookId: previewBookId,
             size: String(form.data.pdf_page_size ?? ''),
             variant: previewVariant,
+            fit: String(form.data.pdf_image_fit ?? 'crop'),
         });
 
         window.open(`/admin/settings/pdf-preview?${query}`, '_blank');
@@ -198,21 +244,87 @@ export default function AdminSettings({ settings, pdfPageSizes }: Props) {
     };
 
     const activePresetId =
-        ENGINE_PRESETS.find((preset) => {
+        enginePresets.find((preset) => {
             if (
                 preset.values.image_provider !== settings.image_provider?.value
             ) {
                 return false;
             }
 
-            return (
-                preset.values.image_model_flow === undefined ||
-                preset.values.image_model_flow ===
+            if (
+                preset.values.image_model_flow !== undefined &&
+                preset.values.image_model_flow !==
                     settings.image_model_flow?.value
+            ) {
+                return false;
+            }
+
+            return (
+                preset.values.image_model_replicate === undefined ||
+                preset.values.image_model_replicate ===
+                    settings.image_model_replicate?.value
             );
         })?.id ?? null;
 
+    // The dedicated cover engine, encoded as one select value: 'default'
+    // (same as main), 'replicate:<model>' (a catalog engine), or a bare
+    // provider (that provider's configured model).
+    const coverEngineValue = (() => {
+        const provider = String(settings.cover_image_provider?.value ?? '');
+        const model = String(settings.cover_image_model?.value ?? '');
+
+        if (provider === '') {
+            return 'default';
+        }
+
+        if (provider === 'replicate' && model !== '') {
+            return `replicate:${model}`;
+        }
+
+        return provider;
+    })();
+    const [savingCoverEngine, setSavingCoverEngine] = useState(false);
+
+    const saveCoverEngine = (value: string) => {
+        const provider =
+            value === 'default'
+                ? ''
+                : value.startsWith('replicate:')
+                  ? 'replicate'
+                  : value;
+        const model = value.startsWith('replicate:')
+            ? value.slice('replicate:'.length)
+            : '';
+
+        form.setData({
+            ...form.data,
+            cover_image_provider: provider,
+            cover_image_model: model,
+        });
+        router.put(
+            '/admin/settings',
+            {
+                ...form.data,
+                cover_image_provider: provider,
+                cover_image_model: model,
+            },
+            {
+                preserveScroll: true,
+                onStart: () => setSavingCoverEngine(true),
+                onFinish: () => setSavingCoverEngine(false),
+            },
+        );
+    };
+
     const applyPreset = (preset: EnginePreset) => {
+        if (preset.values.image_model_replicate !== undefined) {
+            setReplicateCustomModel(false);
+            form.setData(
+                'image_model_replicate',
+                preset.values.image_model_replicate,
+            );
+        }
+
         router.put(
             '/admin/settings',
             { ...form.data, ...preset.values },
@@ -302,7 +414,7 @@ export default function AdminSettings({ settings, pdfPageSizes }: Props) {
                     </CardHeader>
                     <CardContent>
                         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                            {ENGINE_PRESETS.map((preset) => {
+                            {enginePresets.map((preset) => {
                                 const active = activePresetId === preset.id;
                                 const Icon = preset.icon;
 
@@ -337,10 +449,67 @@ export default function AdminSettings({ settings, pdfPageSizes }: Props) {
                                             <span className="mt-0.5 block text-xs text-muted-foreground">
                                                 {preset.description}
                                             </span>
+                                            {preset.cost && (
+                                                <span className="mt-1 block text-xs font-medium text-gold-foreground dark:text-gold">
+                                                    {preset.cost}
+                                                </span>
+                                            )}
                                         </span>
                                     </button>
                                 );
                             })}
+                        </div>
+
+                        {/* The cover can run on a pricier model than the
+                            pages: it is the one image that sells the book. */}
+                        <div className="mt-4 rounded-xl border border-card-border bg-muted/20 p-4">
+                            <Field
+                                label="Cover engine"
+                                hint="The cover only. 'Same as main engine' follows the cards above; a per-run override on a book page still wins."
+                                overridden={
+                                    settings.cover_image_provider?.overridden
+                                }
+                            >
+                                <Select
+                                    value={coverEngineValue}
+                                    onValueChange={saveCoverEngine}
+                                    disabled={savingCoverEngine}
+                                >
+                                    <SelectTrigger className="max-w-xl">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="default">
+                                            Same as main engine
+                                        </SelectItem>
+                                        {replicateEngines.map((engine) => (
+                                            <SelectItem
+                                                key={engine.model}
+                                                value={`replicate:${engine.model}`}
+                                            >
+                                                Replicate {engine.label} (
+                                                {engine.costDetail})
+                                            </SelectItem>
+                                        ))}
+                                        {[
+                                            'openai',
+                                            'gemini',
+                                            'openrouter',
+                                            'flow',
+                                            'grok',
+                                            'piapi',
+                                            'replicate',
+                                        ].map((provider) => (
+                                            <SelectItem
+                                                key={provider}
+                                                value={provider}
+                                            >
+                                                {provider} (configured model)
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </Field>
                         </div>
                     </CardContent>
                 </Card>
@@ -390,6 +559,43 @@ export default function AdminSettings({ settings, pdfPageSizes }: Props) {
                                     {form.errors.pdf_page_size && (
                                         <p className="text-xs text-destructive">
                                             {form.errors.pdf_page_size}
+                                        </p>
+                                    )}
+                                </Field>
+                            </div>
+                            <div className="min-w-56">
+                                <Field
+                                    label="Image fit"
+                                    overridden={
+                                        settings.pdf_image_fit?.overridden
+                                    }
+                                >
+                                    <Select
+                                        value={String(
+                                            form.data.pdf_image_fit ?? 'crop',
+                                        )}
+                                        onValueChange={(value) =>
+                                            form.setData('pdf_image_fit', value)
+                                        }
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="crop">
+                                                Fill page (edges cropped)
+                                            </SelectItem>
+                                            <SelectItem value="full">
+                                                Full image above text
+                                            </SelectItem>
+                                            <SelectItem value="overlay">
+                                                Full-page image, text overlay
+                                            </SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    {form.errors.pdf_image_fit && (
+                                        <p className="text-xs text-destructive">
+                                            {form.errors.pdf_image_fit}
                                         </p>
                                     )}
                                 </Field>
@@ -492,6 +698,18 @@ export default function AdminSettings({ settings, pdfPageSizes }: Props) {
                                         {number('pages_min', 'Pages minimum')}
                                         {number('pages_max', 'Pages maximum')}
                                     </div>
+                                    {select(
+                                        'image_aspect_ratio',
+                                        'Image aspect ratio',
+                                        imageAspectRatios,
+                                        'Every page and cover generates at this ratio. The character sheet stays portrait regardless.',
+                                    )}
+                                    {select(
+                                        'image_quality',
+                                        'Image quality',
+                                        ['standard', 'high', 'max'],
+                                        'Resolution tier for Replicate engines: standard = smallest, high = ~2K, max = the largest the model offers (slower, pricier).',
+                                    )}
                                     <Field
                                         label="Group page generation"
                                         hint="Render all pages as one coherent set when the model supports it (Seedream); others fall back to page-by-page."
@@ -591,7 +809,85 @@ export default function AdminSettings({ settings, pdfPageSizes }: Props) {
                                     {text('image_model_flow', 'Flow gateway')}
                                     {text('image_model_grok', 'xAI Grok')}
                                     {text('image_model_piapi', 'PiAPI Flux')}
-                                    {text('image_model_replicate', 'Replicate')}
+                                    <Field
+                                        label="Replicate"
+                                        hint="Catalog engines have verified parameters and pricing; Custom accepts any owner/model slug (schema-driven)."
+                                        overridden={
+                                            settings.image_model_replicate
+                                                ?.overridden
+                                        }
+                                    >
+                                        <Select
+                                            value={
+                                                replicateCustomModel
+                                                    ? 'custom'
+                                                    : String(
+                                                          form.data
+                                                              .image_model_replicate ??
+                                                              '',
+                                                      )
+                                            }
+                                            onValueChange={(value) => {
+                                                if (value === 'custom') {
+                                                    setReplicateCustomModel(
+                                                        true,
+                                                    );
+
+                                                    return;
+                                                }
+
+                                                setReplicateCustomModel(false);
+                                                form.setData(
+                                                    'image_model_replicate',
+                                                    value,
+                                                );
+                                            }}
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {replicateEngines.map(
+                                                    (engine) => (
+                                                        <SelectItem
+                                                            key={engine.model}
+                                                            value={engine.model}
+                                                        >
+                                                            {engine.label} (
+                                                            {engine.costDetail})
+                                                        </SelectItem>
+                                                    ),
+                                                )}
+                                                <SelectItem value="custom">
+                                                    Custom...
+                                                </SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                        {replicateCustomModel && (
+                                            <Input
+                                                placeholder="owner/model"
+                                                value={String(
+                                                    form.data
+                                                        .image_model_replicate ??
+                                                        '',
+                                                )}
+                                                onChange={(e) =>
+                                                    form.setData(
+                                                        'image_model_replicate',
+                                                        e.target.value,
+                                                    )
+                                                }
+                                            />
+                                        )}
+                                        {form.errors.image_model_replicate && (
+                                            <p className="text-xs text-destructive">
+                                                {
+                                                    form.errors
+                                                        .image_model_replicate
+                                                }
+                                            </p>
+                                        )}
+                                    </Field>
                                 </CardContent>
                             </Card>
 

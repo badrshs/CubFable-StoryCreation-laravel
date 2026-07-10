@@ -42,6 +42,7 @@ class OpenAiProvider implements AiProvider
     public function image(string $prompt, string $size, array $references): string
     {
         $model = (string) config('cubfable.ai.models.image.openai');
+        $size = $this->nearestSupportedSize($size);
 
         $primary = $references[0] ?? null;
         $parts = $primary instanceof ImageReference ? $this->parseImageDataUrl($primary->dataUrl()) : null;
@@ -82,6 +83,27 @@ class OpenAiProvider implements AiProvider
         $base64 = $response->json('data.0.b64_json');
 
         return base64_decode(is_string($base64) ? $base64 : '');
+    }
+
+    /**
+     * gpt-image-1 accepts exactly three sizes; map any requested WxH to the
+     * one whose orientation matches, so a 9:16 book setting cannot 400 here.
+     */
+    private function nearestSupportedSize(string $size): string
+    {
+        if (in_array($size, ['1024x1024', '1536x1024', '1024x1536'], true)) {
+            return $size;
+        }
+
+        if (preg_match('/^(\d+)x(\d+)$/', $size, $matches) !== 1) {
+            return '1024x1024';
+        }
+
+        return match (true) {
+            (int) $matches[1] > (int) $matches[2] => '1536x1024',
+            (int) $matches[1] < (int) $matches[2] => '1024x1536',
+            default => '1024x1024',
+        };
     }
 
     public function describe(string $instruction, string $photoDataUrl): string

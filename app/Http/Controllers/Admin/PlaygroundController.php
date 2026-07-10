@@ -6,10 +6,13 @@ use App\Enums\AgeRange;
 use App\Enums\ArtStyle;
 use App\Enums\StoryLanguage;
 use App\Http\Controllers\Controller;
+use App\Jobs\EngineOverride;
 use App\Models\Book;
 use App\Models\Character;
 use App\Models\Template;
 use App\Services\AI\AiManager;
+use App\Services\AI\ImageSizePolicy;
+use App\Services\AI\Replicate\ReplicateModelCatalog;
 use App\Services\AI\SafeImageGenerator;
 use App\Services\AI\UsageCollector;
 use App\Services\StoryGenerator;
@@ -27,9 +30,10 @@ use Inertia\Response;
  */
 class PlaygroundController extends Controller
 {
-    public function index(): Response
+    public function index(ReplicateModelCatalog $catalog): Response
     {
         return Inertia::render('admin/playground', [
+            'replicateEngines' => $catalog->options(),
             'templates' => Template::query()->orderBy('title')->get(['id', 'title', 'theme', 'page_count'])
                 ->map(fn (Template $template): array => [
                     'id' => $template->id,
@@ -123,17 +127,23 @@ class PlaygroundController extends Controller
 
     /**
      * Execute one real image call with the given prompt (PAID - explicit
-     * button). The image is returned inline and not stored.
+     * button). The image is returned inline and not stored. An optional
+     * engine override applies to this request only, so any catalog engine
+     * can be smoke-tested without touching the stored settings.
      */
-    public function runImage(Request $request, SafeImageGenerator $images, UsageCollector $usage): JsonResponse
+    public function runImage(Request $request, SafeImageGenerator $images, UsageCollector $usage, ImageSizePolicy $sizes): JsonResponse
     {
         $validated = $request->validate([
             'prompt' => ['required', 'string', 'max:20000'],
-            'size' => ['nullable', 'in:1024x1536,1536x1024,1024x1024'],
+            'size' => ['nullable', 'regex:/^\d{3,4}x\d{3,4}$/'],
+            'provider' => ['nullable', 'in:openai,gemini,openrouter,flow,grok,piapi,replicate'],
+            'model' => ['nullable', 'string', 'max:200'],
         ]);
 
+        EngineOverride::apply($validated['provider'] ?? null, $validated['model'] ?? null);
+
         try {
-            $image = $images->generate($validated['prompt'], $validated['size'] ?? '1024x1536', [], 'playground');
+            $image = $images->generate($validated['prompt'], $validated['size'] ?? $sizes->bookSize(), [], 'playground');
         } finally {
             $usage->flush(null);
         }

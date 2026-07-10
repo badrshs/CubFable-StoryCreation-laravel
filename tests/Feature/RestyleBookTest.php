@@ -36,11 +36,11 @@ class RestyleBookTest extends TestCase
         $oldPageImage = $book->pages()->first()->image_path;
 
         $this->actingAs($user)
-            ->post(route('books.restyle', ['id' => $book->id]), ['artStyle' => 'crayon'])
+            ->post(route('books.restyle', ['id' => $book->id]), ['artStyle' => 'watercolor'])
             ->assertRedirect();
 
         $book->refresh();
-        $this->assertSame('crayon', $book->art_style);
+        $this->assertSame('watercolor', $book->art_style);
         $this->assertSame(BookStatus::Pending, $book->status);
         $this->assertNull($book->cover_image_path);
         $this->assertNull($book->hero_sheet_path);
@@ -68,7 +68,7 @@ class RestyleBookTest extends TestCase
 
         $this->actingAs($user)
             ->from(route('books.show', ['id' => $book->id]))
-            ->post(route('books.restyle', ['id' => $book->id]), ['artStyle' => 'crayon'])
+            ->post(route('books.restyle', ['id' => $book->id]), ['artStyle' => 'watercolor'])
             ->assertSessionHasErrors('artStyle');
 
         Queue::assertNothingPushed();
@@ -80,7 +80,7 @@ class RestyleBookTest extends TestCase
         $book->update(['status' => BookStatus::Draft]);
 
         $this->actingAs($user)
-            ->post(route('books.restyle', ['id' => $book->id]), ['artStyle' => 'crayon'])
+            ->post(route('books.restyle', ['id' => $book->id]), ['artStyle' => 'watercolor'])
             ->assertStatus(402);
     }
 
@@ -103,7 +103,7 @@ class RestyleBookTest extends TestCase
         $stranger = User::factory()->create();
 
         $this->actingAs($stranger)
-            ->post(route('books.restyle', ['id' => $book->id]), ['artStyle' => 'crayon'])
+            ->post(route('books.restyle', ['id' => $book->id]), ['artStyle' => 'watercolor'])
             ->assertNotFound();
     }
 

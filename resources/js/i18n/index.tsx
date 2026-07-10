@@ -4,7 +4,7 @@ import {
     useCallback,
     useContext,
     useEffect,
-    useState,
+    useSyncExternalStore,
 } from 'react';
 import { LANGUAGES, DEFAULT_LANG, langDir } from './languages';
 
@@ -53,18 +53,66 @@ function interpolate(template: string, vars?: Vars): string {
     );
 }
 
-export function LanguageProvider({ children }: { children: ReactNode }) {
-    const [lang, setLangState] = useState<string>(() => {
-        if (typeof localStorage !== 'undefined') {
-            const saved = localStorage.getItem(STORAGE_KEY);
+// Language lives in a tiny external store so the first client render can match
+// the server (which has no localStorage) while the client adopts the saved
+// language right after hydration. useSyncExternalStore reconciles the server
+// and client snapshots without tripping a hydration mismatch.
+let clientLang: string | null = null;
+const langListeners = new Set<() => void>();
 
-            if (saved && LANGUAGES.some((l) => l.code === saved)) {
-                return saved;
-            }
+function readSavedLang(): string {
+    try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+
+        if (saved && LANGUAGES.some((l) => l.code === saved)) {
+            return saved;
         }
+    } catch {
+        /* ignore */
+    }
 
-        return DEFAULT_LANG;
-    });
+    return DEFAULT_LANG;
+}
+
+function getLangSnapshot(): string {
+    if (clientLang === null) {
+        clientLang = readSavedLang();
+    }
+
+    return clientLang;
+}
+
+function subscribeLang(callback: () => void): () => void {
+    langListeners.add(callback);
+
+    return () => {
+        langListeners.delete(callback);
+    };
+}
+
+function writeLang(code: string): void {
+    clientLang = code;
+
+    try {
+        localStorage.setItem(STORAGE_KEY, code);
+    } catch {
+        /* ignore */
+    }
+
+    for (const listener of langListeners) {
+        listener();
+    }
+}
+
+export function LanguageProvider({ children }: { children: ReactNode }) {
+    // Server snapshot is always the default; the client resolves the saved
+    // language from localStorage. React hydrates against the server value,
+    // then re-renders to the client value - no hydration mismatch.
+    const lang = useSyncExternalStore(
+        subscribeLang,
+        getLangSnapshot,
+        () => DEFAULT_LANG,
+    );
 
     const dir = langDir(lang);
 
@@ -77,13 +125,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     }, [lang, dir]);
 
     const setLang = useCallback((code: string) => {
-        setLangState(code);
-
-        try {
-            localStorage.setItem(STORAGE_KEY, code);
-        } catch {
-            /* ignore */
-        }
+        writeLang(code);
     }, []);
 
     const t = useCallback(

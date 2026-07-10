@@ -20,6 +20,8 @@ class PageSize
         'square-216' => ['label' => 'Square 8.5 x 8.5 in (216 x 216 mm, POD standard)', 'mmW' => 215.9, 'mmH' => 215.9],
         'a4-portrait' => ['label' => 'A4 portrait (210 x 297 mm)', 'mmW' => 210, 'mmH' => 297],
         'a4-landscape' => ['label' => 'A4 landscape (297 x 210 mm)', 'mmW' => 297, 'mmH' => 210],
+        'a5-portrait' => ['label' => 'A5 portrait (148 x 210 mm)', 'mmW' => 148, 'mmH' => 210],
+        'a5-landscape' => ['label' => 'A5 landscape (210 x 148 mm)', 'mmW' => 210, 'mmH' => 148],
         'portrait-8x10' => ['label' => 'Portrait 8 x 10 in (203 x 254 mm)', 'mmW' => 203.2, 'mmH' => 254],
         'landscape-10x8' => ['label' => 'Landscape 10 x 8 in (254 x 203 mm)', 'mmW' => 254, 'mmH' => 203.2],
         'letter-portrait' => ['label' => 'US Letter portrait (216 x 279 mm)', 'mmW' => 215.9, 'mmH' => 279.4],

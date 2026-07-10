@@ -3,6 +3,7 @@
 namespace App\Services\Prompts;
 
 use App\Models\Character;
+use App\Services\AI\Replicate\ReplicateModelCatalog;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -14,6 +15,8 @@ use Illuminate\Support\Facades\Storage;
  */
 class ReferencePolicy
 {
+    public function __construct(private ReplicateModelCatalog $replicateCatalog = new ReplicateModelCatalog) {}
+
     /**
      * How many reference images can actually travel with one request, so
      * prompts only describe characters whose reference cannot be sent.
@@ -43,11 +46,24 @@ class ReferencePolicy
             return 1;
         }
 
-        // Replicate depends on the model: Seedream and Nano Banana read a
-        // multi-image array (14+), so every photographed cast member's photo
-        // can travel; Kontext-style editors take exactly one source image.
+        // Replicate depends on the model. Cataloged engines answer from
+        // their verified capabilities: none (text-only identity), a
+        // multi-image array capped at 6 like every array engine, or a
+        // Kontext-style single source image. Unknown slugs keep the old
+        // name-based heuristic.
         if ($provider === 'replicate') {
             $model = strtolower((string) config('cubfable.ai.models.image.replicate'));
+            $definition = $this->replicateCatalog->find($model);
+
+            if ($definition !== null) {
+                if ($definition->referenceField === null) {
+                    return 0;
+                }
+
+                $ceiling = $definition->referencesAreArray ? min($definition->maxReferences, 6) : 1;
+
+                return $cap > 0 ? min($cap, $ceiling) : $ceiling;
+            }
 
             $multiImage = str_contains($model, 'seedream') || str_contains($model, 'nano-banana');
 

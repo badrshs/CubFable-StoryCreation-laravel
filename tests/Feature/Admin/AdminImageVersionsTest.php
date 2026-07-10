@@ -150,6 +150,18 @@ class AdminImageVersionsTest extends TestCase
 
         Queue::assertPushed(RegenerateCoverJob::class, fn (RegenerateCoverJob $job): bool => $job->imageProvider === 'flow' && $job->imageModel === 'google-flow');
 
+        // A Replicate catalog engine sends its exact model with the job, so
+        // the dropdown label and the model that actually runs always match.
+        $this->actingAs($this->admin())
+            ->post("/admin/books/{$book->id}/images/regenerate", [
+                'target' => 'page-1',
+                'provider' => 'replicate',
+                'model' => 'bytedance/seedream-4.5',
+            ])
+            ->assertRedirect();
+
+        Queue::assertPushed(RegeneratePageJob::class, fn (RegeneratePageJob $job): bool => $job->imageProvider === 'replicate' && $job->imageModel === 'bytedance/seedream-4.5');
+
         // Unknown providers are rejected.
         $this->actingAs($this->admin())
             ->from("/admin/books/{$book->id}")

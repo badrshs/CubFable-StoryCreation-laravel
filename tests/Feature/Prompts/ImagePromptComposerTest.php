@@ -98,7 +98,7 @@ class ImagePromptComposerTest extends TestCase
         $prompt = $this->composer()->cover($book, $main)['prompt'];
 
         $this->assertStringStartsWith('STYLE: ', $prompt);
-        $this->assertStringContainsString('Front cover artwork for a children\'s picture book, portrait format.', $prompt);
+        $this->assertStringContainsString('Front cover artwork for a children\'s picture book, 9:16 portrait.', $prompt);
         $this->assertStringContainsString('spelled exactly', $prompt);
         $this->assertStringContainsString('"Mia"', $prompt);
         $this->assertStringContainsString('No words or letters in the artwork beyond the two title lines above.', $prompt);

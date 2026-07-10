@@ -167,6 +167,13 @@ class StorybookPdfBuilder
 
     private bool $rtl = false;
 
+    /**
+     * How book art sits on the page: 'crop' fills (edges cropped), 'full'
+     * shows the whole image above the text, 'overlay' shows the whole image
+     * full-page with the story text on a translucent panel over it.
+     */
+    private string $imageFit = 'crop';
+
     /** @var list<string> transcoded temp images to clean up */
     private array $tempImages = [];
 
@@ -176,11 +183,18 @@ class StorybookPdfBuilder
      * @param  string  $variant  print (bleed + crop marks) or home (trim only)
      * @param  string|null  $sizeKey  a PageSize preset key; null follows the
      *                                configured runtime setting
+     * @param  string|null  $imageFit  'crop' (fill, edges cropped), 'full'
+     *                                 (whole image above the text) or
+     *                                 'overlay' (whole image full-page, text
+     *                                 on a translucent panel); null follows
+     *                                 the configured runtime setting
      */
-    public function build(Book $book, string $variant = 'print', ?string $sizeKey = null): string
+    public function build(Book $book, string $variant = 'print', ?string $sizeKey = null, ?string $imageFit = null): string
     {
         $size = PageSize::fromKey($sizeKey ?? (string) config('cubfable.pdf.page_size', PageSize::DEFAULT));
 
+        $fit = $imageFit ?? (string) config('cubfable.pdf.image_fit', 'crop');
+        $this->imageFit = in_array($fit, ['full', 'overlay'], true) ? $fit : 'crop';
         $this->printMarks = $variant !== 'home';
         $this->bleed = $this->printMarks ? 3 * self::MM : 0.0;
         $this->trimW = $size->trimW;
@@ -687,6 +701,26 @@ class StorybookPdfBuilder
         $this->pdf->StopTransform();
     }
 
+    /**
+     * Draw an image scaled to fit WHOLLY inside a box whose (x, y) is its
+     * bottom-left corner, centered on both axes - the page background shows
+     * through on the short sides instead of the image being cropped.
+     *
+     * @param  array{path: string, width: int, height: int}  $image
+     */
+    private function drawContainFit(array $image, float $x, float $y, float $w, float $h): void
+    {
+        $scale = min($w / $image['width'], $h / $image['height']);
+        $dw = $image['width'] * $scale;
+        $dh = $image['height'] * $scale;
+        $dx = $x + ($w - $dw) / 2;
+        $dy = $y + ($h - $dh) / 2;
+
+        $placed = $this->placedImage($image, $dw, $dh);
+
+        $this->pdf->Image($placed['path'], $dx, $this->flipY($dy + $dh), $dw, $dh);
+    }
+
     // ---------------------------------------------------------------- pages
 
     private function drawCoverPage(Book $book): void
@@ -695,9 +729,15 @@ class StorybookPdfBuilder
 
         $cover = $this->resolveImage($book->cover_image_path);
 
-        if ($cover !== null) {
+        if ($cover !== null && $this->imageFit === 'full') {
+            // Full-image mode: the whole cover art, centered on the night
+            // sky so the letterbox reads as a deliberate matte. Overlay mode
+            // bleeds the cover edge to edge like crop mode.
+            $this->verticalGradient(0, 0, $this->pageW, $this->pageH, self::INDIGO_MID, self::INK_NIGHT);
+            $this->drawContainFit($cover, 0, 0, $this->pageW, $this->pageH);
+        } elseif ($cover !== null) {
             // The AI cover carries its title art near the top; keep the top
-            // edge when the 2:3 art is cropped into the square page.
+            // edge when the art is cropped into the page.
             $this->drawCoverFit($cover, 0, 0, $this->pageW, $this->pageH, 'top');
         } else {
             $this->verticalGradient(0, 0, $this->pageW, $this->pageH, self::INDIGO_MID, self::INK_NIGHT);
@@ -787,19 +827,44 @@ class StorybookPdfBuilder
     private function drawStoryPage(Page $page): void
     {
         $this->addLeaf();
+
+        $image = $this->resolveImage($page->image_path);
+
+        // Overlay mode: the illustration IS the page and the story text sits
+        // on a translucent panel over it.
+        if ($image !== null && $this->imageFit === 'overlay') {
+            $this->drawOverlayStoryPage($page, $image);
+
+            return;
+        }
+
         $this->fillPage(self::PAPER);
 
         // A full-width art band across the top (bleeding off both sides on the
         // print variant), story text centred in the zone beneath, folio at the
         // bottom - the classic square picture-book spread.
-        $image = $this->resolveImage($page->image_path);
-
         $bandW = $this->pageW;
         $bandH = min($this->pageW * (2 / 3), $this->pageH * 0.62);
+
+        // Full-image mode: the band hugs the illustration's own ratio, so
+        // landscape art spans edge to edge with nothing cropped and portrait
+        // art gets the tallest band the text zone allows (letterboxed on the
+        // sides only). The art also earns more of the page than in crop mode.
+        if ($image !== null && $this->imageFit === 'full' && $image['width'] > 0) {
+            $bandH = min($this->pageH * 0.72, $bandW * $image['height'] / $image['width']);
+        }
+
         $bandBottom = $this->pageH - $bandH;
 
         if ($image !== null) {
-            $this->drawCoverFit($image, 0, $bandBottom, $bandW, $bandH);
+            // Full-image mode shows the whole illustration inside the band
+            // (paper showing on the short sides); crop mode fills the band.
+            if ($this->imageFit === 'full') {
+                $this->drawContainFit($image, 0, $bandBottom, $bandW, $bandH);
+            } else {
+                $this->drawCoverFit($image, 0, $bandBottom, $bandW, $bandH);
+            }
+
             // A hairline gold seam grounds the band on the page.
             $this->pdf->SetDrawColor(self::GOLD[0], self::GOLD[1], self::GOLD[2]);
             $this->pdf->SetLineWidth(1);
@@ -863,6 +928,96 @@ class StorybookPdfBuilder
     }
 
     /**
+     * The overlay story page: the illustration bleeds edge to edge across
+     * the whole page (the short sides are cropped slightly when the ratio
+     * differs, never letterboxed), and the story text sits over its lower
+     * part on a rounded translucent night panel - like a modern picture-book
+     * plate.
+     *
+     * @param  array{path: string, width: int, height: int}  $image
+     */
+    private function drawOverlayStoryPage(Page $page, array $image): void
+    {
+        $this->drawCoverFit($image, 0, 0, $this->pageW, $this->pageH);
+
+        $text = trim((string) $page->text);
+
+        if ($text !== '') {
+            $padX = 28.0;
+            $padY = 18.0;
+            $maxTextW = $this->trimW - 2 * self::MARGIN - 2 * $padX;
+
+            $size = 15.0;
+            $lines = [];
+
+            do {
+                $lines = $this->wrapLines('story', $text, $size, $maxTextW);
+
+                if (count($lines) <= 6 || $size <= 11) {
+                    break;
+                }
+
+                $size -= 0.5;
+            } while (true);
+
+            // The panel hugs its longest line instead of spanning the page:
+            // a short sentence gets a neat plate, not a floating gray bar.
+            $this->useFont('story', $size);
+            $maxLineW = 0.0;
+
+            foreach ($lines as $line) {
+                $maxLineW = max($maxLineW, (float) $this->pdf->GetStringWidth($line));
+            }
+
+            $panelW = min($this->trimW - 2 * self::MARGIN, max(200.0, $maxLineW + 2 * $padX));
+
+            $leading = $size * 1.5;
+            $textH = count($lines) * $leading;
+            $panelH = $textH + 2 * $padY;
+            $panelBottom = $this->bleed + 56;
+            $panelX = $this->cx - $panelW / 2;
+            $panelTop = $this->flipY($panelBottom + $panelH);
+            $radius = 14.0;
+
+            // A soft halo, a near-opaque night plate (busy art must never
+            // muddy the words), and the brand's gold hairline frame.
+            $this->pdf->SetFillColor(self::INK_NIGHT[0], self::INK_NIGHT[1], self::INK_NIGHT[2]);
+            $this->pdf->setAlpha(0.16);
+            $this->pdf->RoundedRect($panelX - 4, $panelTop - 4, $panelW + 8, $panelH + 8, $radius + 3, '1111', 'F');
+            $this->pdf->setAlpha(0.82);
+            $this->pdf->RoundedRect($panelX, $panelTop, $panelW, $panelH, $radius, '1111', 'F');
+            $this->pdf->setAlpha(0.85);
+            $this->pdf->SetDrawColor(self::GOLD[0], self::GOLD[1], self::GOLD[2]);
+            $this->pdf->SetLineWidth(0.9);
+            $this->pdf->RoundedRect($panelX, $panelTop, $panelW, $panelH, $radius, '1111', 'D');
+            $this->pdf->setAlpha(1);
+
+            if ($this->rtl) {
+                $this->pdf->setRTL(true);
+            }
+
+            $baseline = $panelBottom + $panelH - $padY - $size;
+
+            foreach ($lines as $line) {
+                if ($this->rtl) {
+                    $this->rtlCenteredStoryLine($line, $baseline, $size, self::CREAM);
+                } else {
+                    $this->centeredText($line, $baseline, $size, 'story', self::CREAM);
+                }
+
+                $baseline -= $leading;
+            }
+
+            if ($this->rtl) {
+                $this->pdf->setRTL(false);
+            }
+        }
+
+        $this->trackedCentered((string) $page->page_number, $this->bleed + 30, 11, 'accent', self::PERIWINKLE, 2);
+        $this->drawCropMarks();
+    }
+
+    /**
      * An RTL story line drawn through TCPDF's own centered cell: the library
      * shapes, bidi-reorders and centers the glyph run itself, so manual
      * centering math (measured on the unshaped logical string) can never
@@ -874,10 +1029,15 @@ class StorybookPdfBuilder
      * right edge and the full-trim cell covers the page exactly; passing a
      * physical left-space x instead pushes the whole line off-canvas.
      */
-    private function rtlCenteredStoryLine(string $text, float $baseline, float $size): void
+    /**
+     * @param  array{int, int, int}|null  $color
+     */
+    private function rtlCenteredStoryLine(string $text, float $baseline, float $size, ?array $color = null): void
     {
+        $color ??= self::INK;
+
         $this->useFont('story', $size);
-        $this->pdf->SetTextColor(self::INK[0], self::INK[1], self::INK[2]);
+        $this->pdf->SetTextColor($color[0], $color[1], $color[2]);
         $this->pdf->SetXY($this->bleed, $this->flipY($baseline));
         $this->pdf->Cell($this->trimW, 0, $text, 0, 0, 'C');
     }

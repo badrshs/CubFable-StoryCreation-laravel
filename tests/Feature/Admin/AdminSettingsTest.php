@@ -85,6 +85,69 @@ class AdminSettingsTest extends TestCase
         $this->assertDatabaseMissing('settings', ['key' => 'text_provider']);
     }
 
+    public function test_the_settings_page_exposes_the_replicate_engine_catalog(): void
+    {
+        $this->withoutVite()
+            ->actingAs($this->admin())
+            ->get('/admin/settings')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('admin/settings')
+                ->where('replicateEngines.0.provider', 'replicate')
+                ->where('replicateEngines.0.model', 'bytedance/seedream-5-pro')
+                ->has('replicateEngines.0.label')
+                ->has('replicateEngines.0.cost')
+                ->has('imageAspectRatios'));
+    }
+
+    public function test_image_quality_and_aspect_ratio_save_and_reject_unknown_values(): void
+    {
+        $this->actingAs($this->admin())
+            ->put('/admin/settings', $this->payload([
+                'image_quality' => 'standard',
+                'image_aspect_ratio' => '3:2',
+            ]))
+            ->assertRedirect();
+
+        $this->assertSame('standard', config('cubfable.ai.image_quality'));
+        $this->assertSame('3:2', config('cubfable.ai.image_aspect_ratio'));
+
+        $this->actingAs($this->admin())
+            ->put('/admin/settings', $this->payload(['image_quality' => 'ultra']))
+            ->assertSessionHasErrors('image_quality');
+
+        $this->actingAs($this->admin())
+            ->put('/admin/settings', $this->payload(['image_aspect_ratio' => '13:37']))
+            ->assertSessionHasErrors('image_aspect_ratio');
+    }
+
+    public function test_the_cover_engine_saves_and_clears(): void
+    {
+        $this->actingAs($this->admin())
+            ->put('/admin/settings', $this->payload([
+                'cover_image_provider' => 'replicate',
+                'cover_image_model' => 'bytedance/seedream-5-pro',
+            ]))
+            ->assertRedirect();
+
+        $this->assertSame('replicate', config('cubfable.ai.cover_image_provider'));
+        $this->assertSame('bytedance/seedream-5-pro', config('cubfable.ai.cover_image_model'));
+
+        // Blank means "same as main engine" again.
+        $this->actingAs($this->admin())
+            ->put('/admin/settings', $this->payload([
+                'cover_image_provider' => '',
+                'cover_image_model' => '',
+            ]))
+            ->assertRedirect();
+
+        $this->assertSame('', config('cubfable.ai.cover_image_provider'));
+
+        $this->actingAs($this->admin())
+            ->put('/admin/settings', $this->payload(['cover_image_provider' => 'hacked']))
+            ->assertSessionHasErrors('cover_image_provider');
+    }
+
     public function test_page_bounds_must_be_coherent(): void
     {
         $this->actingAs($this->admin())

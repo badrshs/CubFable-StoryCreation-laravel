@@ -58,6 +58,7 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
     Route::get('books/{id}', [Admin\BookController::class, 'show'])->whereNumber('id')->name('admin.books.show');
     Route::post('books/{id}/resume', [Admin\BookController::class, 'resume'])->whereNumber('id')->name('admin.books.resume');
     Route::post('books/{id}/restart', [Admin\BookController::class, 'restart'])->whereNumber('id')->name('admin.books.restart');
+    Route::post('books/{id}/stop', [Admin\BookController::class, 'stop'])->whereNumber('id')->name('admin.books.stop');
     Route::post('books/{id}/images/regenerate', [Admin\BookController::class, 'regenerateImage'])->whereNumber('id')->name('admin.books.images.regenerate');
     Route::post('books/{id}/images/restore', [Admin\BookController::class, 'restoreImage'])->whereNumber('id')->name('admin.books.images.restore');
     Route::get('books/{id}/log', [Admin\BookController::class, 'log'])->whereNumber('id')->name('admin.books.log');
@@ -74,6 +75,7 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
 
     Route::get('logs', [Admin\LogController::class, 'index'])->name('admin.logs');
     Route::get('logs/download', [Admin\LogController::class, 'download'])->name('admin.logs.download');
+    Route::delete('logs/all', [Admin\LogController::class, 'clearAll'])->name('admin.logs.clear-all');
     Route::delete('logs', [Admin\LogController::class, 'clear'])->name('admin.logs.clear');
 
     Route::get('playground', [Admin\PlaygroundController::class, 'index'])->name('admin.playground');

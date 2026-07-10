@@ -11,6 +11,7 @@ import {
     Palette,
     Play,
     RotateCcw,
+    Square,
     Trash2,
     X,
 } from 'lucide-react';
@@ -84,7 +85,21 @@ type Props = {
     engines: {
         currentProvider: string;
         models: Record<string, string>;
+        replicate: ReplicateEngineOption[];
+        coverProvider: string;
+        coverModel: string;
     };
+};
+
+type ReplicateEngineOption = {
+    provider: string;
+    model: string;
+    label: string;
+    description: string;
+    cost: string;
+    costDetail: string;
+    supportsGroups: boolean;
+    maxReferences: number;
 };
 
 type ImageVersionItem = {
@@ -137,20 +152,17 @@ function JournalRow({ entry }: { entry: JournalEntry }) {
 type GalleryItem = { url: string; caption: string; prompt?: string };
 
 // Per-run engine choices for the regenerate buttons: 'default' follows the
-// stored settings; anything else overrides provider (and model, for the
-// browser gateway variants) for that one job only.
-const ENGINE_OVERRIDES: {
+// stored settings; anything else overrides provider (and model) for that one
+// job only. The Replicate catalog engines are appended from the server so
+// every choice names the exact model it runs.
+type EngineChoice = {
     value: string;
     label: string;
     provider?: string;
     model?: string;
-}[] = [
-    { value: 'default', label: 'Engine: current settings' },
-    {
-        value: 'replicate',
-        label: 'Replicate Kontext Pro',
-        provider: 'replicate',
-    },
+};
+
+const STATIC_ENGINE_OVERRIDES: EngineChoice[] = [
     { value: 'piapi', label: 'PiAPI Flux Kontext', provider: 'piapi' },
     {
         value: 'flow-grok',
@@ -318,12 +330,30 @@ export default function AdminBookShow({
     // The engine label for the current stored settings.
     const settingsEngineLabel = `${engines.currentProvider} - ${engines.models[engines.currentProvider] ?? ''}`;
 
-    // The engine label the regenerate buttons would use (dropdown override
-    // or the stored settings).
-    const regenerateEngineLabel = (): string => {
-        const choice = ENGINE_OVERRIDES.find((e) => e.value === engine);
+    // Every selectable per-run engine: current settings first, then one
+    // entry per Replicate catalog engine (each sending its exact model),
+    // then the other providers.
+    const engineOverrides: EngineChoice[] = [
+        { value: 'default', label: 'Engine: current settings' },
+        ...(engines.replicate ?? []).map((option) => ({
+            value: `replicate:${option.model}`,
+            label: `Replicate ${option.label} (${option.cost})`,
+            provider: option.provider,
+            model: option.model,
+        })),
+        ...STATIC_ENGINE_OVERRIDES,
+    ];
+
+    // The engine label the regenerate buttons would use (dropdown override,
+    // the dedicated cover engine for the cover, or the stored settings).
+    const regenerateEngineLabel = (target: string): string => {
+        const choice = engineOverrides.find((e) => e.value === engine);
 
         if (!choice?.provider) {
+            if (target === 'cover' && engines.coverProvider !== '') {
+                return `${engines.coverProvider} - ${engines.coverModel || engines.models[engines.coverProvider] || ''} (cover engine)`;
+            }
+
             return settingsEngineLabel;
         }
 
@@ -331,11 +361,11 @@ export default function AdminBookShow({
     };
 
     const regenerate = (target: string) => {
-        const choice = ENGINE_OVERRIDES.find((e) => e.value === engine);
+        const choice = engineOverrides.find((e) => e.value === engine);
 
         setConfirmAction({
             title: `Regenerate ${target}?`,
-            description: `A new ${target} image will be generated with ${regenerateEngineLabel()}. The current image stays available as a version.`,
+            description: `A new ${target} image will be generated with ${regenerateEngineLabel(target)}. The current image stays available as a version.`,
             run: () =>
                 act('images/regenerate', {
                     target,
@@ -365,7 +395,6 @@ export default function AdminBookShow({
         return () => clearInterval(timer);
     }, [anythingGenerating]);
     const canRescue = ['pending', 'generating', 'failed'].includes(book.status);
-    const canRestyle = ['complete', 'failed'].includes(book.status);
 
     // The version record behind a slot's ACTIVE image (undefined for images
     // from before version tracking).
@@ -477,6 +506,22 @@ export default function AdminBookShow({
                                 <FileText className="h-4 w-4" /> Log
                             </a>
                         </Button>
+                        {anythingGenerating && (
+                            <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() =>
+                                    setConfirmAction({
+                                        title: `Stop book #${book.id}?`,
+                                        description:
+                                            'The pipeline halts before generating the next image (the one in flight still finishes). The book flips to failed and Resume continues it later, keeping every finished image.',
+                                        run: () => act('stop'),
+                                    })
+                                }
+                            >
+                                <Square className="h-4 w-4" /> Stop
+                            </Button>
+                        )}
                         {canRescue && (
                             <Button
                                 size="sm"
@@ -515,44 +560,36 @@ export default function AdminBookShow({
                                 <HeartPulse className="h-4 w-4" /> Mark complete
                             </Button>
                         )}
-                        {canRestyle && (
-                            <div className="flex items-center gap-1">
-                                <Select
-                                    value={restyleTo}
-                                    onValueChange={setRestyleTo}
-                                >
-                                    <SelectTrigger className="h-9 w-40">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {artStyles.map((style) => (
-                                            <SelectItem
-                                                key={style}
-                                                value={style}
-                                            >
-                                                {style}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() =>
-                                        setConfirmAction({
-                                            title: `Restyle book #${book.id} to ${restyleTo}?`,
-                                            description: `Every image regenerates in the ${restyleTo} style with ${settingsEngineLabel}. The story is kept, and current images stay as versions.`,
-                                            run: () =>
-                                                act('restyle', {
-                                                    artStyle: restyleTo,
-                                                }),
-                                        })
-                                    }
-                                >
-                                    <Palette className="h-4 w-4" /> Restyle
-                                </Button>
-                            </div>
-                        )}
+                        <div className="flex items-center gap-1">
+                            <Select value={restyleTo} onValueChange={setRestyleTo}>
+                                <SelectTrigger className="h-9 w-40">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {artStyles.map((style) => (
+                                        <SelectItem key={style} value={style}>
+                                            {style}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                    setConfirmAction({
+                                        title: `Restyle book #${book.id} to ${restyleTo}?`,
+                                        description: `Every image regenerates in the ${restyleTo} style with ${settingsEngineLabel}. The story is kept, and current images stay as versions.${anythingGenerating ? ' The pipeline running right now is stopped first; the restyle starts after it halts.' : ''}`,
+                                        run: () =>
+                                            act('restyle', {
+                                                artStyle: restyleTo,
+                                            }),
+                                    })
+                                }
+                            >
+                                <Palette className="h-4 w-4" /> Restyle
+                            </Button>
+                        </div>
                         <AlertDialog>
                             <AlertDialogTrigger asChild>
                                 <Button size="sm" variant="destructive">
@@ -643,7 +680,7 @@ export default function AdminBookShow({
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {ENGINE_OVERRIDES.map((choice) => (
+                                        {engineOverrides.map((choice) => (
                                             <SelectItem
                                                 key={choice.value}
                                                 value={choice.value}

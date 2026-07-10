@@ -9,10 +9,6 @@ export const ART_STYLES: ArtStyle[] = [
     'cartoon',
     'storybook',
     'watercolor',
-    'crayon',
-    'clay-animation',
-    'felt-craft',
-    'paper-lightbox',
     'soft-anime',
     'comic-book',
 ];

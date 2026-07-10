@@ -149,14 +149,18 @@ class GenerateStorybookJobTest extends TestCase
     {
         $book = $this->pendingBookWithCast();
 
-        // Portrait images (character sheet and cover, 1024x1536) succeed;
-        // every page image (landscape 1536x1024) 500s.
+        // The character sheet and cover succeed; every page image 500s -
+        // told apart by their prompts (sizes share one orientation now that
+        // the aspect ratio is a setting), and only the sheet/cover markers
+        // pass so rephrased page attempts keep failing too.
         Http::fake(function (Request $request) {
             if (str_contains($request->url(), 'chat/completions')) {
                 return Http::response($this->storyChatResponse());
             }
 
-            if ($this->requestField($request, 'size') === '1024x1536') {
+            $prompt = (string) $this->requestField($request, 'prompt');
+
+            if (str_contains($prompt, 'Front cover artwork') || str_contains($prompt, 'Character sheet')) {
                 return Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]);
             }
 

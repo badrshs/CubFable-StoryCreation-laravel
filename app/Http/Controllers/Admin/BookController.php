@@ -12,10 +12,12 @@ use App\Models\Book;
 use App\Models\ImagePrompt;
 use App\Models\ImageVersion;
 use App\Models\Page;
+use App\Services\AI\Replicate\ReplicateModelCatalog;
 use App\Services\BookImageStorage;
 use App\Services\BookRescueService;
 use App\Services\BookRestarter;
 use App\Services\BookRestyler;
+use App\Services\BookStopSignal;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
@@ -82,7 +84,7 @@ class BookController extends Controller
      * One book with its full prompt journal (what was actually sent to the
      * image models, attempt by attempt) and the admin actions.
      */
-    public function show(int $id): Response
+    public function show(int $id, ReplicateModelCatalog $catalog): Response
     {
         $book = Book::query()->with(['user:id,name,email', 'pages'])->findOrFail($id);
 
@@ -139,6 +141,12 @@ class BookController extends Controller
             'engines' => [
                 'currentProvider' => $imageProvider,
                 'models' => $imageModels,
+                'replicate' => $catalog->options(),
+                // The dedicated cover engine, when configured - so the
+                // regenerate-cover confirmation names the engine that will
+                // actually run.
+                'coverProvider' => (string) config('cubfable.ai.cover_image_provider'),
+                'coverModel' => (string) config('cubfable.ai.cover_image_model'),
             ],
             'book' => [
                 'id' => $book->id,
@@ -195,6 +203,21 @@ class BookController extends Controller
     }
 
     /**
+     * Stop a running pipeline: the worker halts before generating the next
+     * image (the one in flight still finishes), the book flips to Failed and
+     * stays fully resumable. Starting any new run clears the signal.
+     */
+    public function stop(int $id, BookStopSignal $stopSignal): RedirectResponse
+    {
+        $book = Book::query()->findOrFail($id);
+
+        $stopSignal->request($book->id);
+        Log::info('Admin requested the generation pipeline to stop.', ['book_id' => $book->id]);
+
+        return back();
+    }
+
+    /**
      * Queue a regeneration for one image of any user's book: the cover or a
      * single page. The replaced image stays available as a version, and an
      * optional engine override applies to this run only - for comparing
@@ -207,7 +230,7 @@ class BookController extends Controller
         $validated = $request->validate([
             'target' => ['required', 'string', 'regex:/^(cover|page-\d+)$/'],
             'provider' => ['nullable', 'in:openai,gemini,openrouter,flow,grok,piapi,replicate'],
-            'model' => ['nullable', 'string', 'max:120'],
+            'model' => ['nullable', 'string', 'max:200'],
         ]);
 
         $provider = $validated['provider'] ?? null;
@@ -310,21 +333,22 @@ class BookController extends Controller
     }
 
     /**
-     * Re-render a finished book in another style (admin can do it for any user).
+     * Re-render a book in another style, whatever its status (admin can do
+     * it for any user). A pipeline that is still running is signalled to
+     * stop first; the restyle run queues behind it and starts clean.
      */
-    public function restyle(Request $request, int $id, BookRestyler $restyler): RedirectResponse
+    public function restyle(Request $request, int $id, BookRestyler $restyler, BookStopSignal $stopSignal): RedirectResponse
     {
         $book = Book::query()->findOrFail($id);
-
-        if (! in_array($book->status, [BookStatus::Complete, BookStatus::Failed], true)) {
-            throw ValidationException::withMessages([
-                'artStyle' => 'Only complete or failed books can be restyled.',
-            ]);
-        }
 
         $validated = $request->validate([
             'artStyle' => ['required', Rule::enum(ArtStyle::class)],
         ]);
+
+        if (in_array($book->status, [BookStatus::Pending, BookStatus::Generating], true)) {
+            $stopSignal->request($book->id);
+            Log::info('Restyle on a running book: the current pipeline was signalled to stop.', ['book_id' => $book->id]);
+        }
 
         $restyler->restyle($book, $validated['artStyle']);
 

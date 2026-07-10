@@ -74,6 +74,79 @@ class StorybookPdfBuilderTest extends TestCase
         $this->assertMatchesRegularExpression('/MediaBox \[0\.000000 0\.000000 841\.8897\d+ 595\.2755\d+\]/', $pdf);
     }
 
+    public function test_a5_pages_follow_the_preset_dimensions(): void
+    {
+        $pdf = app(StorybookPdfBuilder::class)->build($this->illustratedBook(), 'home', 'a5-portrait');
+
+        // 148 x 210 mm in points.
+        $this->assertMatchesRegularExpression('/MediaBox \[0\.000000 0\.000000 419\.5275\d+ 595\.2755\d+\]/', $pdf);
+    }
+
+    public function test_full_image_fit_letterboxes_instead_of_cropping(): void
+    {
+        $book = $this->illustratedBook();
+
+        $cropped = app(StorybookPdfBuilder::class)->build($book, 'home', 'square-210', 'crop');
+        $full = app(StorybookPdfBuilder::class)->build($book, 'home', 'square-210', 'full');
+
+        $this->assertStringStartsWith('%PDF', $full);
+        $this->assertSame(9, preg_match_all('#/Type /Page\b#', $full));
+
+        // The 40x60 (2:3) cover on the 595pt square page: crop mode scales
+        // it to fill the width (595 x 892, top/bottom cropped), full mode
+        // fits the whole height (396 x 595, sides letterboxed). The image
+        // transform matrix carries those numbers.
+        $this->assertMatchesRegularExpression('/q 595\.2\d+ 0 0 892\.9\d+/', $this->uncompressedStreams($cropped));
+        $this->assertMatchesRegularExpression('/q 396\.8\d+ 0 0 595\.2\d+/', $this->uncompressedStreams($full));
+    }
+
+    public function test_overlay_fit_draws_the_image_full_page_with_a_text_panel(): void
+    {
+        $pdf = app(StorybookPdfBuilder::class)->build($this->illustratedBook(), 'home', 'a4-portrait', 'overlay');
+
+        $this->assertStringStartsWith('%PDF', $pdf);
+        $this->assertSame(9, preg_match_all('#/Type /Page\b#', $pdf));
+
+        $streams = $this->uncompressedStreams($pdf);
+
+        // The 60x40 (3:2) page art bleeds edge to edge on A4 portrait: it
+        // fills the 841pt height (1262pt wide, sides cropped), never
+        // letterboxed.
+        $this->assertMatchesRegularExpression('/q 1262\.8\d+ 0 0 841\.8\d+/', $streams);
+        // The translucent text panel is a rounded rect (curves + fill).
+        $this->assertStringContainsString(' c', $streams);
+        $this->assertMatchesRegularExpression('/ re f| f\n/', $streams);
+    }
+
+    public function test_the_configured_image_fit_drives_the_default_build(): void
+    {
+        config()->set('cubfable.pdf.image_fit', 'full');
+
+        $pdf = app(StorybookPdfBuilder::class)->build($this->illustratedBook(), 'home', 'square-210');
+
+        $this->assertMatchesRegularExpression('/q 396\.8\d+ 0 0 595\.2\d+/', $this->uncompressedStreams($pdf));
+    }
+
+    /**
+     * Every gz-compressed content stream of the PDF, concatenated.
+     */
+    private function uncompressedStreams(string $pdf): string
+    {
+        $out = '';
+
+        preg_match_all('/stream\r?\n(.*?)\r?\nendstream/s', $pdf, $streams);
+
+        foreach ($streams[1] as $stream) {
+            $content = @gzuncompress($stream);
+
+            if ($content !== false) {
+                $out .= $content;
+            }
+        }
+
+        return $out;
+    }
+
     public function test_an_unknown_size_key_falls_back_to_the_square_default(): void
     {
         $pdf = app(StorybookPdfBuilder::class)->build($this->illustratedBook(), 'home', 'no-such-size');

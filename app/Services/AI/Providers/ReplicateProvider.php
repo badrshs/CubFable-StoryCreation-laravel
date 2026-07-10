@@ -6,6 +6,8 @@ use App\Exceptions\ImageContentRejectedException;
 use App\Services\AI\Contracts\AiProvider;
 use App\Services\AI\Contracts\SupportsImageGroups;
 use App\Services\AI\ImageReference;
+use App\Services\AI\Replicate\ReplicateModel;
+use App\Services\AI\Replicate\ReplicateModelCatalog;
 use App\Services\AI\UsageCollector;
 use App\Services\AI\UsageEvent;
 use Illuminate\Http\Client\Response;
@@ -19,9 +21,10 @@ use RuntimeException;
 /**
  * Replicate (images only). Different Replicate models take different input
  * shapes (flux-kontext wants a single `input_image` + `aspect_ratio`;
- * Seedream wants an `image_input` ARRAY + exact width/height; a silently
- * ignored field means the reference never reaches the model), so the
- * provider fetches each model's input schema once and adapts. References
+ * Seedream wants an `image_input` ARRAY; a silently ignored field means the
+ * reference never reaches the model), so cataloged models build their input
+ * from hand-verified capabilities (ReplicateModelCatalog) and unknown slugs
+ * fall back to fetching the model's input schema and adapting. References
  * are uploaded through Replicate's Files API first (data URIs only carry
  * small files); predictions run with Prefer: wait and are polled to
  * completion when they outlast the wait window.
@@ -38,7 +41,10 @@ class ReplicateProvider implements AiProvider, SupportsImageGroups
 
     private const int POLL_TIMEOUT_SECONDS = 300;
 
-    public function __construct(private UsageCollector $usage) {}
+    public function __construct(
+        private UsageCollector $usage,
+        private ReplicateModelCatalog $catalog,
+    ) {}
 
     public function text(string $prompt, int $maxTokens): string
     {
@@ -56,18 +62,24 @@ class ReplicateProvider implements AiProvider, SupportsImageGroups
         $prediction = $this->predict($model, $input);
         $bytes = $this->extractImage($prediction);
 
-        $this->recordUsage($model, 1);
+        $this->recordUsage($model, 1, $this->tierUsed($model, $input));
 
         return $bytes;
     }
 
     /**
-     * Whether the configured model exposes Seedream-style sequential
-     * generation (several images as one coherent set).
+     * Whether the configured model renders several images as one coherent
+     * set (Seedream-style sequential generation). Cataloged models answer
+     * from their verified capabilities; unknown slugs from their schema.
      */
     public function supportsImageGroups(): bool
     {
         $model = (string) config('cubfable.ai.models.image.replicate');
+        $definition = $this->catalog->find($model);
+
+        if ($definition !== null) {
+            return $definition->supportsGroups;
+        }
 
         return isset($this->inputSchema($model)['sequential_image_generation']);
     }
@@ -102,7 +114,7 @@ class ReplicateProvider implements AiProvider, SupportsImageGroups
         $prediction = $this->predict($model, $input);
         $images = $this->extractImages($prediction);
 
-        $this->recordUsage($model, count($images));
+        $this->recordUsage($model, count($images), $this->tierUsed($model, $input));
 
         return $images;
     }
@@ -127,8 +139,22 @@ class ReplicateProvider implements AiProvider, SupportsImageGroups
         return $this->awaitPrediction((array) $response->json());
     }
 
-    private function recordUsage(string $model, int $images): void
+    /**
+     * The resolution tier a built input requests, for per-tier cost lookup.
+     *
+     * @param  array<string, mixed>  $input
+     */
+    private function tierUsed(string $model, array $input): ?string
     {
+        $field = $this->catalog->find($model)?->sizeField;
+
+        return $field !== null && is_string($input[$field] ?? null) ? $input[$field] : null;
+    }
+
+    private function recordUsage(string $model, int $images, ?string $tier = null): void
+    {
+        $costPerImage = $this->catalog->find($model)?->costFor($tier) ?? 0.04;
+
         $this->usage->record(new UsageEvent(
             kind: 'image',
             provider: 'replicate',
@@ -136,7 +162,7 @@ class ReplicateProvider implements AiProvider, SupportsImageGroups
             promptTokens: 0,
             outputTokens: 0,
             totalTokens: 0,
-            costUsd: 0.04 * max(1, $images),
+            costUsd: $costPerImage * max(1, $images),
             estimated: true,
         ));
     }
@@ -147,15 +173,77 @@ class ReplicateProvider implements AiProvider, SupportsImageGroups
     }
 
     /**
-     * Shape the prediction input to what THIS model's schema actually
-     * accepts. A field the model does not know is silently ignored by
-     * Replicate, which for a wrongly named reference field means the model
-     * quietly generates from text alone.
+     * Shape the prediction input to what THIS model actually accepts. A
+     * field the model does not know is silently ignored by Replicate, which
+     * for a wrongly named reference field means the model quietly generates
+     * from text alone. Cataloged models use their hand-verified capabilities
+     * (no schema fetch at all); unknown slugs adapt to their fetched schema.
      *
      * @param  list<ImageReference>  $references
      * @return array<string, mixed>
      */
     private function buildInput(string $model, string $prompt, string $size, array $references): array
+    {
+        $definition = $this->catalog->find($model);
+
+        if ($definition !== null) {
+            return $this->buildInputFromCatalog($definition, $prompt, $size, $references);
+        }
+
+        return $this->buildInputFromSchema($model, $prompt, $size, $references);
+    }
+
+    /**
+     * Build the input for a cataloged model: the exact reference field and
+     * shape, an aspect ratio inside the model's own enum, the resolution
+     * tier for the configured image quality, and a forced PNG wherever the
+     * model would default to webp/jpg.
+     *
+     * @param  list<ImageReference>  $references
+     * @return array<string, mixed>
+     */
+    private function buildInputFromCatalog(ReplicateModel $definition, string $prompt, string $size, array $references): array
+    {
+        $input = ['prompt' => $prompt];
+
+        if ($references !== []) {
+            if ($definition->referenceField !== null) {
+                $urls = array_map(
+                    fn (ImageReference $reference): string => $this->uploadReference($reference),
+                    array_slice($references, 0, max(1, $definition->maxReferences)),
+                );
+
+                $input[$definition->referenceField] = $definition->referencesAreArray ? $urls : $urls[0];
+            } else {
+                Log::warning("Replicate model {$definition->slug} takes no reference images; generating from text alone.");
+            }
+        }
+
+        // Always explicit: left unset, most models default to
+        // match_input_image, which is an error without an input image and
+        // the wrong shape with one.
+        $input['aspect_ratio'] = $this->aspectRatio($size, $definition->aspectRatios);
+
+        // Always explicit too: Nano Banana 2 defaults to a washed-out 1K
+        // when the tier is unset.
+        if ($definition->sizeField !== null) {
+            $input[$definition->sizeField] = $definition->tierFor((string) config('cubfable.ai.image_quality', 'high'));
+        }
+
+        if ($definition->outputFormat !== null) {
+            $input['output_format'] = $definition->outputFormat;
+        }
+
+        return [...$input, ...$definition->staticParams];
+    }
+
+    /**
+     * Schema-driven fallback for models outside the catalog.
+     *
+     * @param  list<ImageReference>  $references
+     * @return array<string, mixed>
+     */
+    private function buildInputFromSchema(string $model, string $prompt, string $size, array $references): array
     {
         $schema = $this->inputSchema($model);
         $input = ['prompt' => $prompt];
@@ -224,32 +312,39 @@ class ReplicateProvider implements AiProvider, SupportsImageGroups
     /**
      * The model's input schema properties, fetched once and cached. An empty
      * array means the schema could not be read; callers fall back to the
-     * Kontext-style conventions then.
+     * Kontext-style conventions then. Failures are cached for one minute
+     * only, so a transient API error cannot degrade an hour of requests to
+     * the fallback conventions.
      *
      * @return array<string, mixed>
      */
     private function inputSchema(string $model): array
     {
-        return Cache::remember("replicate.input-schema.{$model}", now()->addHour(), function () use ($model): array {
-            $response = Http::timeout(30)
-                ->withToken($this->apiKey())
-                ->get($this->baseUrl()."/v1/models/{$model}");
+        $cacheKey = "replicate.input-schema.{$model}";
+        $cached = Cache::get($cacheKey);
 
-            if ($response->failed()) {
-                Log::warning("Replicate model schema fetch failed for {$model} ({$response->status()}); using default input conventions.");
+        if (is_array($cached)) {
+            return $cached;
+        }
 
-                return [];
-            }
+        $response = Http::timeout(30)
+            ->withToken($this->apiKey())
+            ->get($this->baseUrl()."/v1/models/{$model}");
 
-            $schemas = $response->json('latest_version.openapi_schema.components.schemas');
-            $properties = is_array($schemas) ? ($schemas['Input']['properties'] ?? null) : null;
+        if ($response->failed()) {
+            Log::warning("Replicate model schema fetch failed for {$model} ({$response->status()}); using default input conventions.");
+            Cache::put($cacheKey, [], now()->addMinute());
 
-            if (! is_array($properties)) {
-                return [];
-            }
+            return [];
+        }
 
-            return $this->resolveEnumReferences($properties, $schemas);
-        });
+        $schemas = $response->json('latest_version.openapi_schema.components.schemas');
+        $properties = is_array($schemas) ? ($schemas['Input']['properties'] ?? null) : null;
+
+        $resolved = is_array($properties) ? $this->resolveEnumReferences($properties, $schemas) : [];
+        Cache::put($cacheKey, $resolved, $resolved === [] ? now()->addMinute() : now()->addHour());
+
+        return $resolved;
     }
 
     /**

@@ -121,13 +121,31 @@ class AdminLogsTest extends TestCase
             ->assertSessionHasErrors('file');
     }
 
-    public function test_clear_empties_the_file(): void
+    public function test_clear_deletes_the_file(): void
     {
         $this->actingAs($this->admin())
             ->delete('/admin/logs?file='.$this->logFile)
-            ->assertRedirect();
+            ->assertRedirect(route('admin.logs'));
 
-        $this->assertSame('', File::get(storage_path('logs/'.$this->logFile)));
+        $this->assertFalse(File::exists(storage_path('logs/'.$this->logFile)));
+    }
+
+    public function test_clear_all_deletes_every_log(): void
+    {
+        File::ensureDirectoryExists(storage_path('logs/books'));
+        $bookLog = storage_path('logs/books/book-190001.log');
+        File::put($bookLog, "[1999-01-01 10:00:00] book.INFO: Generation run started.\n");
+
+        try {
+            $this->actingAs($this->admin())
+                ->delete('/admin/logs/all')
+                ->assertRedirect(route('admin.logs'));
+
+            $this->assertFalse(File::exists(storage_path('logs/'.$this->logFile)));
+            $this->assertFalse(File::exists($bookLog));
+        } finally {
+            File::delete($bookLog);
+        }
     }
 
     public function test_download_streams_the_file(): void
@@ -144,5 +162,6 @@ class AdminLogsTest extends TestCase
 
         $this->actingAs($user)->get('/admin/logs')->assertNotFound();
         $this->actingAs($user)->delete('/admin/logs?file='.$this->logFile)->assertNotFound();
+        $this->actingAs($user)->delete('/admin/logs/all')->assertNotFound();
     }
 }

@@ -89,7 +89,7 @@ class BookDraftEditingTest extends TestCase
         $book->refresh();
         $this->assertSame('Nora', $book->child_name);
         $this->assertSame('6-8', $book->age_range);
-        $this->assertSame('crayon', $book->art_style);
+        $this->assertSame('watercolor', $book->art_style);
         $this->assertSame(BookStatus::Draft, $book->status);
 
         $cast = $book->characters()->get();
@@ -195,7 +195,7 @@ class BookDraftEditingTest extends TestCase
             'theme' => 'forest',
             'subject' => 'Camping',
             'lifeLesson' => 'Courage',
-            'artStyle' => 'crayon',
+            'artStyle' => 'watercolor',
             'font' => 'classic',
             'language' => 'en',
             'characters' => [

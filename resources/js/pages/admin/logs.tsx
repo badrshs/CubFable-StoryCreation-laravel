@@ -6,6 +6,7 @@ import {
     RefreshCw,
     ScrollText,
     Search,
+    Trash2,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -191,12 +192,12 @@ export default function AdminLogs({
                             <AlertDialogContent>
                                 <AlertDialogHeader>
                                     <AlertDialogTitle>
-                                        Clear {selected}?
+                                        Delete {selected}?
                                     </AlertDialogTitle>
                                     <AlertDialogDescription>
-                                        Empties the file. This cannot be
-                                        undone - download it first if you may
-                                        need it.
+                                        Deletes this log file for good. This
+                                        cannot be undone - download it first if
+                                        you may need it.
                                     </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
@@ -211,7 +212,40 @@ export default function AdminLogs({
                                             )
                                         }
                                     >
-                                        Clear file
+                                        Delete file
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
+                        <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                                <Button variant="destructive" size="sm">
+                                    <Trash2 className="h-4 w-4" /> Clear all
+                                </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>
+                                        Delete all logs?
+                                    </AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        Deletes every log file, including the
+                                        per-book logs. This cannot be undone -
+                                        download anything you need first.
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>
+                                        Cancel
+                                    </AlertDialogCancel>
+                                    <AlertDialogAction
+                                        onClick={() =>
+                                            router.delete('/admin/logs/all', {
+                                                preserveScroll: true,
+                                            })
+                                        }
+                                    >
+                                        Clear all
                                     </AlertDialogAction>
                                 </AlertDialogFooter>
                             </AlertDialogContent>

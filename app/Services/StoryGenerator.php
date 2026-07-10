@@ -15,6 +15,7 @@ use App\Services\AI\AppearanceDescriber;
 use App\Services\AI\FlowSessionContext;
 use App\Services\AI\GeneratedImage;
 use App\Services\AI\ImageReference;
+use App\Services\AI\ImageSizePolicy;
 use App\Services\AI\PromptLogContext;
 use App\Services\AI\SafeImageGenerator;
 use App\Services\AI\UsageCollector;
@@ -46,7 +47,21 @@ class StoryGenerator
         private ReferencePolicy $references,
         private IdentityCapsule $identity,
         private ImageVersionArchiver $versions,
+        private ImageSizePolicy $sizes,
+        private BookStopSignal $stopSignal,
     ) {}
+
+    /**
+     * Halt the pipeline when the admin pressed Stop: no further image is
+     * generated, the outer catch flips the book to Failed, and Resume picks
+     * the run back up later with every finished image kept.
+     */
+    private function abortIfStopRequested(Book $book): void
+    {
+        if ($this->stopSignal->requested($book->id)) {
+            throw new RuntimeException('Generation stopped by the admin.');
+        }
+    }
 
     /**
      * Key one book run to one gateway conversation, so a session-capable
@@ -68,6 +83,10 @@ class StoryGenerator
     public function generateStorybook(Book $book): void
     {
         try {
+            // A stale stop from an earlier run must never kill this one:
+            // starting a run is always an intentional act.
+            $this->stopSignal->clear($book->id);
+
             $book->update(['status' => BookStatus::Generating]);
             $this->startFlowSession($book);
 
@@ -103,6 +122,7 @@ class StoryGenerator
             // once here instead of independently on every image. In photo
             // mode the original upload leads instead and no sheet is made.
             // A sheet that survived an interrupted run is reused as-is.
+            $this->abortIfStopRequested($book);
             $anchor = $this->references->anchorsWithSheet($main)
                 ? ($this->anchorFor($book) ?? $this->prepareHeroSheet($book, $main))
                 : null;
@@ -110,6 +130,7 @@ class StoryGenerator
             // Cover (generated WITH the title; the decorative frame is added
             // in the UI). Skipped when a previous run already produced one.
             if ($book->cover_image_path === null) {
+                $this->abortIfStopRequested($book);
                 $this->storeCover($book, $main, $anchor);
             }
 
@@ -133,6 +154,11 @@ class StoryGenerator
                 if ($page->status === PageStatus::Complete && $page->image_path !== null) {
                     continue;
                 }
+
+                // Outside the per-page try: a stop ends the whole run (the
+                // book flips to Failed and stays resumable), it does not
+                // just skip one page.
+                $this->abortIfStopRequested($book);
 
                 try {
                     $this->storePageIllustration($page, $book, $cast, $main, $anchor);
@@ -485,7 +511,7 @@ class StoryGenerator
     {
         ['prompt' => $prompt, 'references' => $references] = $this->imagePrompts->sheet($book, $main);
 
-        return $this->safeImages->generate($prompt, '1024x1536', $references, 'character sheet', new PromptLogContext($book->id, 'character-sheet'));
+        return $this->safeImages->generate($prompt, $this->sizes->sheetSize(), $references, 'character sheet', new PromptLogContext($book->id, 'character-sheet'));
     }
 
     /**
@@ -511,7 +537,7 @@ class StoryGenerator
     {
         ['prompt' => $prompt, 'references' => $references] = $this->imagePrompts->page($book, $page, $cast, $main, $anchor);
 
-        return $this->safeImages->generate($prompt, '1536x1024', $references, "page {$page->page_number}", new PromptLogContext($book->id, 'page', $page->id));
+        return $this->safeImages->generate($prompt, $this->sizes->bookSize(), $references, "page {$page->page_number}", new PromptLogContext($book->id, 'page', $page->id));
     }
 
     /**
@@ -523,29 +549,70 @@ class StoryGenerator
     {
         ['prompt' => $coverPrompt, 'references' => $coverReferences] = $this->imagePrompts->cover($book, $main, $anchor);
 
-        return $this->safeImages->generate($coverPrompt, '1024x1536', $coverReferences, 'cover', new PromptLogContext($book->id, 'cover'));
+        return $this->safeImages->generate($coverPrompt, $this->sizes->bookSize(), $coverReferences, 'cover', new PromptLogContext($book->id, 'cover'));
     }
 
     /**
-     * Generate and store the cover (1024x1536 portrait), replacing any
-     * previous file.
+     * Generate and store the cover (at the configured aspect ratio),
+     * replacing any previous file. The whole step runs under the dedicated
+     * cover engine when one is configured, so the prompt's reference budget,
+     * the generation itself and the version stamp all agree on the engine.
      */
     private function storeCover(Book $book, Character $main, ?ImageReference $anchor = null): void
     {
-        $image = $this->generateCoverImage($book, $main, $anchor);
-        $path = sprintf('books/%d/cover-%s.png', $book->id, Str::lower(Str::random(8)));
+        $this->withCoverEngine(function () use ($book, $main, $anchor): void {
+            $image = $this->generateCoverImage($book, $main, $anchor);
+            $path = sprintf('books/%d/cover-%s.png', $book->id, Str::lower(Str::random(8)));
 
-        $this->images->storeGenerated($image->bytes, $path);
-        $book->update(['cover_image_path' => $path, 'cover_prompt' => $image->prompt]);
+            $this->images->storeGenerated($image->bytes, $path);
+            $book->update(['cover_image_path' => $path, 'cover_prompt' => $image->prompt]);
 
-        // The replaced file stays on disk as a restorable version.
-        ImageVersion::query()->create(['book_id' => $book->id, 'slot' => 'cover', 'path' => $path, 'prompt' => $image->prompt, ...$this->currentEngine()]);
-        Log::info('Cover stored.', ['path' => $path, 'attempt' => $image->attempt]);
+            // The replaced file stays on disk as a restorable version.
+            ImageVersion::query()->create(['book_id' => $book->id, 'slot' => 'cover', 'path' => $path, 'prompt' => $image->prompt, ...$this->currentEngine()]);
+            Log::info('Cover stored.', ['path' => $path, 'attempt' => $image->attempt]);
+        });
     }
 
     /**
-     * Generate and store one page illustration (1536x1024 landscape),
-     * replacing any previous file, and mark the page complete.
+     * Run the callback with the dedicated cover engine applied. A blank
+     * cover provider means the cover follows the main engine; an explicit
+     * per-run admin override (EngineOverride) always wins. The original
+     * config is restored afterwards so the pages keep their own engine.
+     */
+    private function withCoverEngine(callable $callback): void
+    {
+        $provider = trim((string) config('cubfable.ai.cover_image_provider'));
+
+        if ($provider === '' || (bool) config('cubfable.ai.engine_override_active')) {
+            $callback();
+
+            return;
+        }
+
+        $model = trim((string) config('cubfable.ai.cover_image_model'));
+        $modelPath = "cubfable.ai.models.image.{$provider}";
+        $originalProvider = config('cubfable.ai.image_provider');
+        $originalModel = config($modelPath);
+
+        config()->set('cubfable.ai.image_provider', $provider);
+
+        if ($model !== '') {
+            config()->set($modelPath, $model);
+        }
+
+        Log::info('Cover engine engaged for this cover.', ['provider' => $provider, 'model' => $model !== '' ? $model : (string) config($modelPath)]);
+
+        try {
+            $callback();
+        } finally {
+            config()->set('cubfable.ai.image_provider', $originalProvider);
+            config()->set($modelPath, $originalModel);
+        }
+    }
+
+    /**
+     * Generate and store one page illustration (at the configured aspect
+     * ratio), replacing any previous file, and mark the page complete.
      *
      * @param  Collection<int, Character>  $cast
      */
@@ -603,9 +670,11 @@ class StoryGenerator
         $styleAnchor = null;
 
         foreach ($batches as $batchPages) {
+            $this->abortIfStopRequested($book);
+
             ['prompt' => $prompt, 'references' => $references] = $this->imagePrompts->pageGroup($book, $batchPages, $cast, $main, $anchor, $styleAnchor);
 
-            $images = $this->ai->generateImageGroup($prompt, '1536x1024', $references, count($batchPages));
+            $images = $this->ai->generateImageGroup($prompt, $this->sizes->bookSize(), $references, count($batchPages));
 
             foreach (array_values($batchPages) as $index => $page) {
                 if (! isset($images[$index])) {

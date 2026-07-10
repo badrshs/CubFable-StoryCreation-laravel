@@ -51,6 +51,36 @@ class StoryCraftRulesTest extends TestCase
         $this->assertStringContainsString('Write exactly 3 pages', $authorPrompt);
     }
 
+    public function test_the_writing_rules_demand_a_purposeful_story_and_ban_nonsense_sounds(): void
+    {
+        $rules = (new StoryCraftRules)->writingRules('Mia', '4-6', 'Arabic');
+
+        // The story must carry real meaning...
+        $this->assertStringContainsString('PURPOSEFUL', $rules);
+        $this->assertStringContainsString('one clear, beautiful meaning', $rules);
+
+        // ...the refrain is a meaningful sentence, not baby sounds...
+        $this->assertStringContainsString('real, meaningful sentence', $rules);
+        $this->assertStringContainsString('NEVER a catchphrase of nonsense sounds', $rules);
+
+        // ...and invented babble is banned outright.
+        $this->assertStringContainsString('NEVER invent sounds, syllables or baby babble', $rules);
+
+        // The old sound-word instructions are gone.
+        $this->assertStringNotContainsString('Boom! Splash!', $rules);
+        $this->assertStringNotContainsString('sound words', $rules);
+    }
+
+    public function test_no_age_band_asks_for_sound_words(): void
+    {
+        $rules = new StoryCraftRules;
+
+        foreach (['2-4', '4-6', '6-8', '8-10'] as $ageRange) {
+            $this->assertStringNotContainsString('sound word', $rules->ageRules($ageRange), "age band {$ageRange} still asks for sound words");
+            $this->assertStringNotContainsString('Boom', $rules->ageRules($ageRange), "age band {$ageRange} still asks for Boom/Splash");
+        }
+    }
+
     public function test_arabic_stories_demand_full_tashkeel(): void
     {
         [$book, $cast, $main] = $this->bookWithCast();

@@ -27,6 +27,13 @@ return [
 
     'pdf' => [
         'page_size' => (string) env('PDF_PAGE_SIZE', 'square-210'),
+
+        /*
+         * How book art sits on the page: 'crop' scales each image to fill
+         * its area (edges are cropped when the ratios differ), 'full' shows
+         * the whole image, letterboxed on the page background when needed.
+         */
+        'image_fit' => (string) env('PDF_IMAGE_FIT', 'crop'),
     ],
 
     /*
@@ -93,7 +100,7 @@ return [
                 'flow' => env('IMAGE_MODEL_FLOW', 'grok-imagine'),
                 'grok' => env('IMAGE_MODEL_GROK', 'grok-imagine-image'),
                 'piapi' => env('IMAGE_MODEL_PIAPI', 'Qubico/flux1-dev-advanced'),
-                'replicate' => env('IMAGE_MODEL_REPLICATE', 'black-forest-labs/flux-kontext-pro'),
+                'replicate' => env('IMAGE_MODEL_REPLICATE', 'bytedance/seedream-5-pro'),
             ],
             /*
              * Photo description (vision) normally rides on the text model.
@@ -133,11 +140,37 @@ return [
         'piapi_base_url' => env('PIAPI_BASE_URL', 'https://api.piapi.ai'),
 
         /*
-         * Replicate (images only): IMAGE_PROVIDER=replicate. Aimed at the
-         * flux-kontext-pro editing model; the reference travels via
-         * Replicate's Files API.
+         * Replicate (images only): IMAGE_PROVIDER=replicate. Each cataloged
+         * model (ReplicateModelCatalog) is a switchable engine; references
+         * travel via Replicate's Files API.
          */
         'replicate_base_url' => env('REPLICATE_BASE_URL', 'https://api.replicate.com'),
+
+        /*
+         * Resolution tier requested from engines that offer one (Replicate
+         * catalog models): standard picks the smallest tier, high the ~2K
+         * sweet spot, max the largest the model lists. Higher tiers cost
+         * more per image and commit harder to the art style.
+         */
+        'image_quality' => (string) env('IMAGE_QUALITY', 'high'),
+
+        /*
+         * A dedicated engine for the COVER only, so the one image that sells
+         * the book can run on a pricier model than the pages. Empty provider
+         * means the cover uses the main image engine; empty model means the
+         * provider's configured model. An explicit per-run admin override
+         * still wins over this.
+         */
+        'cover_image_provider' => (string) env('COVER_IMAGE_PROVIDER', ''),
+        'cover_image_model' => (string) env('COVER_IMAGE_MODEL', ''),
+
+        /*
+         * The aspect ratio every page and cover is generated at. Engines
+         * that only accept their own ratio presets get the closest one they
+         * support. The character sheet stays portrait regardless; it is an
+         * identity reference, not book art.
+         */
+        'image_aspect_ratio' => (string) env('IMAGE_ASPECT_RATIO', '9:16'),
 
         /*
          * Some image models cap how many reference images a request may

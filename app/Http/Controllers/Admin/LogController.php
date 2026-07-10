@@ -74,7 +74,8 @@ class LogController extends Controller
     }
 
     /**
-     * Empty a log file (keeps the file so running processes keep their handle).
+     * Delete a log file. The selected file is gone afterwards, so redirect to
+     * the viewer root rather than back to a now-missing ?file= query.
      */
     public function clear(Request $request): RedirectResponse
     {
@@ -83,9 +84,38 @@ class LogController extends Controller
 
         abort_if($file === '', 404);
 
-        File::put(storage_path('logs/'.$file), '');
+        $this->remove(storage_path('logs/'.$file));
 
-        return back();
+        return redirect()->route('admin.logs');
+    }
+
+    /**
+     * Delete every log file, both the standard logs and the accumulated
+     * per-book logs.
+     */
+    public function clearAll(): RedirectResponse
+    {
+        $paths = [
+            ...File::glob(storage_path('logs/*.log')),
+            ...File::glob(storage_path('logs/books/*.log')),
+        ];
+
+        foreach ($paths as $path) {
+            $this->remove($path);
+        }
+
+        return redirect()->route('admin.logs');
+    }
+
+    /**
+     * Delete a log file, falling back to emptying it if it cannot be removed
+     * (e.g. still held open by a live process on Windows).
+     */
+    private function remove(string $path): void
+    {
+        if (! File::delete($path)) {
+            File::put($path, '');
+        }
     }
 
     /**

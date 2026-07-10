@@ -39,6 +39,13 @@ type Props = {
     artStyles: string[];
     ageRanges: string[];
     languages: string[];
+    replicateEngines: {
+        provider: string;
+        model: string;
+        label: string;
+        cost: string;
+        costDetail: string;
+    }[];
 };
 
 type Prompts = {
@@ -113,6 +120,7 @@ export default function AdminPlayground({
     artStyles,
     ageRanges,
     languages,
+    replicateEngines,
 }: Props) {
     const [mode, setMode] = useState<'book' | 'sample'>(
         books.length > 0 ? 'book' : 'sample',
@@ -129,6 +137,9 @@ export default function AdminPlayground({
     const [error, setError] = useState<string | null>(null);
     const [textResult, setTextResult] = useState<string | null>(null);
     const [imageResult, setImageResult] = useState<string | null>(null);
+    // Which engine the image run uses: the stored settings, or one Replicate
+    // catalog engine overridden for that single call.
+    const [imageEngine, setImageEngine] = useState('default');
 
     const preview = async () => {
         setBusy('preview');
@@ -183,7 +194,12 @@ export default function AdminPlayground({
         try {
             const result = await post<{ dataUrl: string }>(
                 '/admin/playground/run-image',
-                { prompt: prompts.cover, size: '1024x1536' },
+                {
+                    prompt: prompts.cover,
+                    ...(imageEngine !== 'default'
+                        ? { provider: 'replicate', model: imageEngine }
+                        : {}),
+                },
             );
 
             setImageResult(result.dataUrl);
@@ -411,6 +427,30 @@ export default function AdminPlayground({
                                 )}
                                 Run image test on cover prompt (paid)
                             </Button>
+                            {/* One paid call against any catalog engine
+                                without touching the stored settings. */}
+                            <Select
+                                value={imageEngine}
+                                onValueChange={setImageEngine}
+                            >
+                                <SelectTrigger className="h-9 w-64">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="default">
+                                        Engine: current settings
+                                    </SelectItem>
+                                    {replicateEngines.map((engine) => (
+                                        <SelectItem
+                                            key={engine.model}
+                                            value={engine.model}
+                                        >
+                                            Replicate {engine.label} (
+                                            {engine.cost})
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                         </div>
 
                         <div className="grid gap-4 lg:grid-cols-2">
