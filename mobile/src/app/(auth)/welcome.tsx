@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
@@ -16,7 +17,12 @@ export default function WelcomeScreen() {
     <NightSky stars={52}>
       <View style={[styles.screen, { paddingTop: insets.top + spacing['4xl'], paddingBottom: insets.bottom + spacing['2xl'] }]}>
         <Animated.View entering={FadeInDown.duration(700).springify()} style={styles.hero}>
-          <Text style={styles.moon}>🌙</Text>
+          <Image
+            source={require('@/assets/images/splash-icon.png')}
+            style={styles.mark}
+            contentFit="contain"
+            accessibilityLabel="CubFable"
+          />
           <BrandMark size={40} />
           <Text variant="title" size="3xl" center style={styles.headline}>
             Your child, the hero of their own storybook
@@ -56,8 +62,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.lg,
   },
-  moon: {
-    fontSize: 52,
+  mark: {
+    width: 108,
+    height: 108,
     marginBottom: spacing.sm,
   },
   headline: {
