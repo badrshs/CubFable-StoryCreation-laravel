@@ -8,7 +8,7 @@
 
 ## 1. What is CubFable?
 
-CubFable is a website that turns a real child into the hero of their own illustrated storybook. A parent (or grandparent, aunt, uncle, family friend) visits the site, picks a story idea, personalizes it with the child's name, age, and optionally a photo, pays a small one-time fee, and the system automatically:
+CubFable is a website and mobile app (iOS and Android) that turns a real child into the hero of their own illustrated storybook. A parent (or grandparent, aunt, uncle, family friend) visits the site or opens the app, picks a story idea, personalizes it with the child's name, age, and optionally a photo, pays a small one-time fee, and the system automatically:
 
 1. Writes a unique story starring that child.
 2. Illustrates every page with AI-generated artwork where the child is recognizably the main character.
@@ -24,6 +24,10 @@ There are two kinds of people who use the system:
 ---
 
 ## 2. The customer journey, start to finish
+
+The journey below describes the website. The mobile app offers the same journey with the same rules: browse the story catalog, run the same three-step wizard (including photos from the phone's camera or gallery), pay, watch the book generate live, read it in a mobile reader, edit page text, regenerate art, restyle, and download or share the PDF. Books are shared between web and app: a book created on one is readable on the other, because both talk to the same account.
+
+The one difference is payment: on the website the customer pays by card (Stripe); in the mobile app the purchase goes through Apple's or Google's in-app purchase system (see section 5).
 
 ### Step A: Landing page
 Visitors see a marketing home page. It shows only anonymous totals (how many books have been created and completed). No customer's book or child is ever shown publicly.
@@ -139,7 +143,8 @@ Cover, half-title page, imprint/copyright page, a dedication page ("For [child's
 
 ## 5. Money: pricing, payments, and cost control
 
-- **Revenue**: one-time payment per book, default 7.99 EUR (admin-configurable price and currency: EUR, USD, GBP, TRY). Stripe handles the payment.
+- **Revenue**: one-time payment per book, default 7.99 EUR (admin-configurable price and currency: EUR, USD, GBP, TRY). On the website, Stripe handles the payment.
+- **Mobile purchases**: in the iOS and Android app the same one-time unlock is bought as an in-app purchase through Apple or Google (managed via RevenueCat). The store sets and displays the price in the customer's local currency, so the app price can differ from the website price, and Apple/Google take their platform commission and handle VAT and refunds. A purchase unlocks generation for exactly one book: each store transaction is consumed once and can never unlock a second book. If the store's confirmation is delayed or lost, the app double-checks the purchase directly with the payment platform (server-side, never trusting the phone's claim) so the customer is never left stuck after paying. An abandoned web card checkout for the same book is safely superseded if the customer pays in the app instead.
 - **Costs**: every single AI call (story writing, vision, every image) is logged with its provider, model, tokens, and cost in USD. The admin dashboard shows total AI spend, spend per book, spend by model and by type of call, and the average AI cost of a completed book next to revenue. This is how the owner knows the margin per book.
 - **Hard cost rules**:
   - No AI generation ever happens before payment.
@@ -150,11 +155,14 @@ Cover, half-title page, imprint/copyright page, a dedication page ("For [child's
 
 ## 6. Accounts and security
 
-- Registration is open by default but the admin can close it.
+- Registration is open by default but the admin can close it (this also closes registration in the mobile app).
 - Sign-in supports email and password, optional two-factor authentication, and passkeys.
-- Only two roles exist: customer and admin (a flag on the user account).
+- The mobile app signs in with email and password and stays signed in securely on the device. Two-factor and passkeys are web-only for now: a customer who enabled two-factor on the web can still sign in to the app with just their password (a known, deliberate v1 simplification). Password reset from the app sends the same reset email as the website.
+- The mobile app lets a customer permanently delete their account from inside the app (an App Store requirement). Deletion removes their books, characters, and orders, and signs out every device.
+- Changing the account password signs out every other device in the app.
+- Only two roles exist: customer and admin (a flag on the user account). The mobile app is customer-only; there is no admin area in the app.
 - A customer can only see their own books, characters, and orders. Someone else's book behaves as if it does not exist.
-- Payments can only be confirmed by trusted signals (Stripe's verified notification or a direct server-side check with Stripe), never by anything the browser claims.
+- Payments can only be confirmed by trusted signals (Stripe's verified notification, the payment platform's verified notification for in-app purchases, or a direct server-side check with the payment provider), never by anything the browser or phone claims.
 
 ---
 

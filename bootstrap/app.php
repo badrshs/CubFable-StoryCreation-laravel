@@ -1,5 +1,7 @@
 <?php
 
+use App\Exceptions\InvalidBookStateException;
+use App\Exceptions\PaymentAlreadyCompletedException;
 use App\Http\Middleware\EnsureUserIsAdmin;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
@@ -12,6 +14,7 @@ use Illuminate\Http\Request;
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
+        api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
@@ -34,4 +37,26 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+
+        $exceptions->render(function (InvalidBookStateException $e, Request $request) {
+            if ($request->is('api/*')) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'code' => 'invalid_book_state',
+                ], 409);
+            }
+
+            return null;
+        });
+
+        $exceptions->render(function (PaymentAlreadyCompletedException $e, Request $request) {
+            if ($request->is('api/*')) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'code' => 'payment_already_completed',
+                ], 409);
+            }
+
+            return null;
+        });
     })->create();

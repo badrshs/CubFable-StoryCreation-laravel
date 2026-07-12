@@ -21,15 +21,32 @@ class OrderFactory extends Factory
      */
     public function definition(): array
     {
+        $paymentIntentId = 'pi_'.Str::random(24);
+
         return [
             'user_id' => User::factory(),
             'book_id' => Book::factory(),
-            'stripe_payment_intent_id' => 'pi_'.Str::random(24),
+            'provider' => Order::PROVIDER_STRIPE,
+            'provider_transaction_id' => $paymentIntentId,
+            'stripe_payment_intent_id' => $paymentIntentId,
             'amount' => 799,
             'currency' => 'eur',
             'status' => OrderStatus::Pending,
             'paid_at' => null,
         ];
+    }
+
+    /**
+     * An in-app purchase order handled through RevenueCat. The transaction id
+     * is stamped only once the store purchase is seen (webhook or reconcile).
+     */
+    public function revenuecat(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'provider' => Order::PROVIDER_REVENUECAT,
+            'provider_transaction_id' => null,
+            'stripe_payment_intent_id' => null,
+        ]);
     }
 
     /**

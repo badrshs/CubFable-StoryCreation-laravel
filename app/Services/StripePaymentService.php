@@ -6,7 +6,6 @@ use App\Enums\BookStatus;
 use App\Enums\OrderStatus;
 use App\Exceptions\InvalidBookStateException;
 use App\Exceptions\PaymentAlreadyCompletedException;
-use App\Jobs\GenerateStorybookJob;
 use App\Models\Book;
 use App\Models\Order;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -22,6 +21,8 @@ use Stripe\StripeClient;
 class StripePaymentService
 {
     private ?StripeClient $client = null;
+
+    public function __construct(private BookPaymentActivator $activator) {}
 
     /**
      * Safe to expose to the client (the publishable key is not a secret).
@@ -93,14 +94,7 @@ class StripePaymentService
 
     /**
      * Apply a successful payment for a PaymentIntent exactly once, then start
-     * generation. This is the single place that turns a paid order into a
-     * generating book, shared by the Stripe webhook and read-time reconciliation.
-     *
-     * Atomic and idempotent: only the caller that actually flips the order to
-     * paid proceeds (the conditional UPDATE claims the row), so concurrent
-     * webhook deliveries and reconciliation cannot double-fire. The book is
-     * flipped only while it is still a draft, so a stale event never overwrites
-     * an in-progress or completed book.
+     * generation, via the provider-agnostic BookPaymentActivator.
      *
      * Callers MUST have already established that the payment truly succeeded
      * via a trusted signal (a signature-verified webhook event, or a
@@ -108,36 +102,12 @@ class StripePaymentService
      */
     public function markOrderPaidAndStart(string $paymentIntentId): void
     {
-        $claimed = Order::query()
+        $orderId = Order::query()
             ->where('stripe_payment_intent_id', $paymentIntentId)
-            ->where('status', '!=', OrderStatus::Paid)
-            ->update([
-                'status' => OrderStatus::Paid->value,
-                'paid_at' => now(),
-            ]);
+            ->value('id');
 
-        if ($claimed === 0) {
-            return;
-        }
-
-        $bookId = Order::query()
-            ->where('stripe_payment_intent_id', $paymentIntentId)
-            ->value('book_id');
-
-        if ($bookId === null) {
-            return;
-        }
-
-        $flipped = Book::query()
-            ->whereKey($bookId)
-            ->where('status', BookStatus::Draft)
-            ->update([
-                'status' => BookStatus::Pending->value,
-                'paid_at' => now(),
-            ]);
-
-        if ($flipped === 1) {
-            GenerateStorybookJob::dispatch($bookId);
+        if ($orderId !== null) {
+            $this->activator->activateOrder($orderId);
         }
     }
 
@@ -146,9 +116,13 @@ class StripePaymentService
      */
     public function markOrderFailed(string $paymentIntentId): void
     {
-        Order::query()
+        $orderId = Order::query()
             ->where('stripe_payment_intent_id', $paymentIntentId)
-            ->update(['status' => OrderStatus::Failed->value]);
+            ->value('id');
+
+        if ($orderId !== null) {
+            $this->activator->failOrder($orderId);
+        }
     }
 
     /**
@@ -202,6 +176,8 @@ class StripePaymentService
             Order::create([
                 'user_id' => $book->user_id,
                 'book_id' => $book->id,
+                'provider' => Order::PROVIDER_STRIPE,
+                'provider_transaction_id' => $created->id,
                 'stripe_payment_intent_id' => $created->id,
                 'amount' => $this->priceCents(),
                 'currency' => $this->priceCurrency(),

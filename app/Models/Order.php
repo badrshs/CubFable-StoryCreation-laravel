@@ -14,7 +14,9 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $user_id
  * @property int $book_id
- * @property string $stripe_payment_intent_id
+ * @property string $provider
+ * @property string|null $provider_transaction_id
+ * @property string|null $stripe_payment_intent_id
  * @property int $amount
  * @property string $currency
  * @property OrderStatus $status
@@ -25,6 +27,8 @@ use Illuminate\Support\Carbon;
 #[Fillable([
     'user_id',
     'book_id',
+    'provider',
+    'provider_transaction_id',
     'stripe_payment_intent_id',
     'amount',
     'currency',
@@ -36,12 +40,17 @@ class Order extends Model
     /** @use HasFactory<OrderFactory> */
     use HasFactory;
 
+    public const string PROVIDER_STRIPE = 'stripe';
+
+    public const string PROVIDER_REVENUECAT = 'revenuecat';
+
     /**
      * The model's default attribute values.
      *
      * @var array<string, mixed>
      */
     protected $attributes = [
+        'provider' => self::PROVIDER_STRIPE,
         'currency' => 'eur',
         'status' => OrderStatus::Pending->value,
     ];

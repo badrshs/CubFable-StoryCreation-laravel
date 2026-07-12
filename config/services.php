@@ -41,4 +41,12 @@ return [
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
     ],
 
+    'revenuecat' => [
+        'api_key' => env('REVENUECAT_API_KEY', ''),
+        'webhook_secret' => env('REVENUECAT_WEBHOOK_SECRET', ''),
+        'product_id' => env('REVENUECAT_PRODUCT_ID', 'cubfable_book'),
+        'allow_sandbox' => (bool) env('REVENUECAT_ALLOW_SANDBOX', false),
+        'base_url' => env('REVENUECAT_BASE_URL', 'https://api.revenuecat.com'),
+    ],
+
 ];
