@@ -2,9 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 
-import { Chip } from '@/components/ui/chip';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
+import { ArtStyleSwatch } from '@/components/wizard/art-style-swatch';
 import type { ArtStyle } from '@/lib/api/types';
 import { ART_STYLES } from '@/lib/story-options';
 import { colors, radii, spacing } from '@/theme';
@@ -55,11 +55,14 @@ export function BookMenuSheet({
             </Text>
             <View style={styles.chips}>
               {ART_STYLES.filter((style) => style.value !== currentArtStyle).map((style) => (
-                <Chip
+                <ArtStyleSwatch
                   key={style.value}
+                  style={style.value}
                   label={style.label}
+                  gradient={style.swatch}
                   selected={selectedStyle === style.value}
                   onPress={() => setSelectedStyle(style.value)}
+                  height={64}
                 />
               ))}
             </View>

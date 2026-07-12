@@ -16,7 +16,7 @@ import * as endpoints from '@/lib/api/endpoints';
 import type { User } from '@/lib/api/types';
 import { identifyPurchaser, resetPurchaser } from '@/lib/purchases/revenuecat';
 
-import { clearStoredToken, readStoredToken, storeToken } from './storage';
+import { clearStoredToken, readStoredToken, readStoredUser, storeToken, storeUser } from './storage';
 
 type AuthState =
   | { status: 'loading'; user: null }
@@ -74,14 +74,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const user = await endpoints.fetchMe();
 
         if (!cancelled) {
+          await storeUser(user);
           await identifyPurchaser(user.id);
           setState({ status: 'authed', user });
         }
       } catch {
-        // An invalid token already triggered forgetSession via 401; a network
-        // failure should not silently sign the user out.
+        // An invalid token already triggered forgetSession via 401. Any other
+        // failure (offline, server restarting) boots with the last known
+        // profile so the user stays signed in.
         if (!cancelled) {
-          setState((current) => (current.status === 'loading' ? { status: 'guest', user: null } : current));
+          const rememberedUser = await readStoredUser();
+
+          setState((current) => {
+            if (current.status !== 'loading') {
+              return current;
+            }
+
+            return rememberedUser !== null
+              ? { status: 'authed', user: rememberedUser }
+              : { status: 'guest', user: null };
+          });
         }
       }
     })();
@@ -95,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const acceptSession = useCallback(async (user: User, token: string) => {
     setApiToken(token);
     await storeToken(token);
+    await storeUser(user);
     await identifyPurchaser(user.id);
     setState({ status: 'authed', user });
   }, []);

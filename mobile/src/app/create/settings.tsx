@@ -1,17 +1,16 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
 import { Input } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
+import { ArtStyleSwatch } from '@/components/wizard/art-style-swatch';
 import { StepHeader } from '@/components/wizard/step-header';
-import { tapFeedback } from '@/lib/haptics';
 import { ART_STYLES, FONTS, LESSONS, STORY_LANGUAGES, SUBJECTS } from '@/lib/story-options';
 import { useWizard } from '@/lib/wizard-context';
-import { colors, fonts as themeFonts, radii, spacing } from '@/theme';
+import { colors, spacing } from '@/theme';
 
 export default function SettingsStepScreen() {
   const insets = useSafeAreaInsets();
@@ -37,40 +36,16 @@ export default function SettingsStepScreen() {
               Art style
             </Text>
             <View style={styles.swatchGrid}>
-              {ART_STYLES.map((style) => {
-                const selected = state.artStyle === style.value;
-
-                return (
-                  <Pressable
-                    key={style.value}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    accessibilityLabel={style.label}
-                    onPress={() => {
-                      tapFeedback();
-                      update({ artStyle: style.value });
-                    }}
-                    style={[styles.swatch, selected && styles.swatchSelected]}
-                  >
-                    <LinearGradient
-                      colors={style.swatch}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.swatchArt}
-                    />
-                    <Text
-                      size="xs"
-                      center
-                      style={{
-                        fontFamily: themeFonts.sansBold,
-                        color: selected ? colors.gold : colors.mutedForeground,
-                      }}
-                    >
-                      {style.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+              {ART_STYLES.map((style) => (
+                <ArtStyleSwatch
+                  key={style.value}
+                  style={style.value}
+                  label={style.label}
+                  gradient={style.swatch}
+                  selected={state.artStyle === style.value}
+                  onPress={() => update({ artStyle: style.value })}
+                />
+              ))}
             </View>
           </View>
 
@@ -189,24 +164,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.md,
-  },
-  swatch: {
-    width: '30%',
-    minWidth: 96,
-    gap: spacing.sm,
-    padding: spacing.sm,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.whiteAlpha05,
-  },
-  swatchSelected: {
-    borderColor: colors.gold,
-    backgroundColor: colors.goldAlpha15,
-  },
-  swatchArt: {
-    height: 56,
-    borderRadius: radii.sm,
   },
   footer: {
     position: 'absolute',
