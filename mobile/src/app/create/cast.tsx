@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,15 +22,15 @@ const MAX_SUPPORTING_CAST = 5;
 
 export default function CastStepScreen() {
   const insets = useSafeAreaInsets();
-  const { state, update, buildPayload, reset } = useWizard();
+  const { state, update, buildPayload } = useWizard();
   const createBook = useCreateBook();
   const updateBook = useUpdateBook(state?.bookId ?? 0);
   const [submitting, setSubmitting] = useState(false);
 
+  // Deep-linking straight into a mid-wizard step has no draft in memory;
+  // Redirect navigates safely without a setState-during-render violation.
   if (state === null) {
-    router.replace('/(tabs)/home');
-
-    return null;
+    return <Redirect href="/(tabs)/home" />;
   }
 
   const patchMember = (key: string, patch: Partial<WizardCastMember>) => {
@@ -51,7 +51,8 @@ export default function CastStepScreen() {
           : await createBook.mutateAsync(payload);
 
       successFeedback();
-      reset();
+      // No explicit state reset: the wizard provider unmounts with this
+      // stack, so the next visit to /create starts fresh automatically.
       router.dismissAll();
       router.replace({ pathname: '/book/[id]/paywall', params: { id: String(book.id) } });
     } catch (cause) {

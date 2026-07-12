@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -16,10 +16,10 @@ export default function SettingsStepScreen() {
   const insets = useSafeAreaInsets();
   const { state, update } = useWizard();
 
+  // Deep-linking straight into a mid-wizard step has no draft in memory;
+  // Redirect navigates safely without a setState-during-render violation.
   if (state === null) {
-    router.replace('/(tabs)/home');
-
-    return null;
+    return <Redirect href="/(tabs)/home" />;
   }
 
   return (
