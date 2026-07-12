@@ -6,6 +6,7 @@ use App\Models\Book;
 use App\Models\Page;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\AI\ImageSizePolicy;
 use App\Services\AppSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
@@ -35,6 +36,16 @@ class AdminSettingsTest extends TestCase
         }
 
         return [...$base, ...$overrides];
+    }
+
+    public function test_out_of_the_box_art_defaults_match_the_display_surfaces(): void
+    {
+        // 3:4 is the ratio the cover shelf and reader frames are drawn at,
+        // and overlay is the PDF mode that crops portrait art the least, so
+        // a fresh install never crops away large parts of the art it paid for.
+        $this->assertSame('3:4', config('cubfable.ai.image_aspect_ratio'));
+        $this->assertSame('overlay', config('cubfable.pdf.image_fit'));
+        $this->assertSame('1152x1536', app(ImageSizePolicy::class)->bookSize());
     }
 
     public function test_the_settings_page_lists_every_registered_setting(): void
@@ -119,6 +130,48 @@ class AdminSettingsTest extends TestCase
         $this->actingAs($this->admin())
             ->put('/admin/settings', $this->payload(['image_aspect_ratio' => '13:37']))
             ->assertSessionHasErrors('image_aspect_ratio');
+    }
+
+    public function test_the_fallback_engine_chain_saves_and_rejects_malformed_entries(): void
+    {
+        $this->actingAs($this->admin())
+            ->put('/admin/settings', $this->payload([
+                'image_fallback_engines' => 'replicate:bytedance/seedream-4.5, gemini:gemini-2.5-flash-image',
+            ]))
+            ->assertRedirect();
+
+        $this->assertSame('replicate:bytedance/seedream-4.5, gemini:gemini-2.5-flash-image', config('cubfable.ai.fallback_engines'));
+
+        $this->actingAs($this->admin())
+            ->put('/admin/settings', $this->payload(['image_fallback_engines' => 'hacked-provider:x']))
+            ->assertSessionHasErrors('image_fallback_engines');
+
+        // Empty disables the chain.
+        $this->actingAs($this->admin())
+            ->put('/admin/settings', $this->payload(['image_fallback_engines' => '']))
+            ->assertRedirect();
+
+        $this->assertSame('', config('cubfable.ai.fallback_engines'));
+    }
+
+    public function test_per_language_pdf_fonts_save_and_clear(): void
+    {
+        $this->actingAs($this->admin())
+            ->put('/admin/settings', $this->payload([
+                'pdf_font_default' => 'harmattan',
+                'pdf_font_ar' => 'Cairo',
+            ]))
+            ->assertRedirect();
+
+        $this->assertSame('harmattan', config('cubfable.pdf.fonts.default'));
+        $this->assertSame('Cairo', config('cubfable.pdf.fonts.ar'));
+
+        // Blank inherits again (language -> default -> automatic faces).
+        $this->actingAs($this->admin())
+            ->put('/admin/settings', $this->payload(['pdf_font_ar' => '']))
+            ->assertRedirect();
+
+        $this->assertSame('', config('cubfable.pdf.fonts.ar'));
     }
 
     public function test_the_cover_engine_saves_and_clears(): void

@@ -13,7 +13,7 @@ class PageSize
     private const float MM = 2.834645669;
 
     /**
-     * @var array<string, array{label: string, mmW: float, mmH: float}>
+     * @var array<string, array{label: string, mmW: float|int, mmH: float|int}>
      */
     private const PRESETS = [
         'square-210' => ['label' => 'Square 210 x 210 mm (current default)', 'mmW' => 210, 'mmH' => 210],

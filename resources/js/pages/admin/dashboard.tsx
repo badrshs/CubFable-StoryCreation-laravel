@@ -4,6 +4,7 @@ import {
     BookOpen,
     Coins,
     PiggyBank,
+    ShieldAlert,
     Wallet,
 } from 'lucide-react';
 import {
@@ -31,6 +32,7 @@ type Props = {
         booksTotal: number;
         avgCostPerBook: number;
         failedJobs: number;
+        flaggedForReview: number;
     };
     byStatus: Record<string, number>;
     trend: { day: string; books: number; spend: number }[];
@@ -142,6 +144,14 @@ export default function AdminDashboard({
                         value={String(stats.failedJobs)}
                         hint="queue failures on record"
                     />
+                    <Link href="/admin/moderation" prefetch>
+                        <StatTile
+                            icon={ShieldAlert}
+                            label="Review queue"
+                            value={String(stats.flaggedForReview)}
+                            hint="images flagged as sensitive"
+                        />
+                    </Link>
                 </div>
 
                 <div className="flex flex-wrap gap-2">

@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Storage;
  * @property string|null $image_prompt
  * @property array<string, string>|null $art_direction
  * @property PageStatus $status
+ * @property Carbon|null $flagged_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read string|null $image_url
@@ -35,6 +36,7 @@ use Illuminate\Support\Facades\Storage;
     'image_prompt',
     'art_direction',
     'status',
+    'flagged_at',
 ])]
 class Page extends Model
 {
@@ -60,6 +62,7 @@ class Page extends Model
         return [
             'status' => PageStatus::class,
             'art_direction' => 'array',
+            'flagged_at' => 'datetime',
         ];
     }
 

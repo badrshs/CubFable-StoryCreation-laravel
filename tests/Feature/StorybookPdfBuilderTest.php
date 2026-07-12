@@ -6,6 +6,8 @@ use App\Models\Book;
 use App\Models\Page;
 use App\Services\Pdf\StorybookPdfBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -154,16 +156,148 @@ class StorybookPdfBuilderTest extends TestCase
         $this->assertMatchesRegularExpression('/MediaBox \[0\.000000 0\.000000 595\.2755\d+ 595\.2755\d+\]/', $pdf);
     }
 
-    public function test_an_arabic_book_builds_with_a_script_capable_font(): void
+    public function test_an_arabic_book_embeds_the_professional_face_for_its_font_choice(): void
     {
-        $book = $this->illustratedBook(['language' => 'ar']);
+        $expectations = [
+            'classic' => 'NotoNaskhArabic',
+            'playful' => 'Vazirmatn',
+            'handwritten' => 'Amiri',
+            'bold' => 'IBMPlexSansArabic',
+        ];
+
+        foreach ($expectations as $choice => $embeddedName) {
+            $book = $this->illustratedBook(['language' => 'ar', 'font' => $choice]);
+            $book->pages()->update(['text' => 'وجدت ليلى فانوسًا مضيئًا في الغابة.']);
+
+            $pdf = app(StorybookPdfBuilder::class)->build($book);
+
+            $this->assertStringStartsWith('%PDF', $pdf);
+            $this->assertStringContainsString($embeddedName, $pdf, "font choice [{$choice}] should embed {$embeddedName}");
+        }
+    }
+
+    public function test_a_language_font_setting_overrides_the_automatic_face(): void
+    {
+        // The language's own setting wins over the default-for-all-languages
+        // one, which would itself win over the automatic classic face.
+        config()->set('cubfable.pdf.fonts.default', 'amiri');
+        config()->set('cubfable.pdf.fonts.ar', 'vazirmatn');
+
+        $book = $this->illustratedBook(['language' => 'ar', 'font' => 'classic']);
+        $book->pages()->update(['text' => 'وجدت ليلى فانوسًا مضيئًا في الغابة.']);
+
+        $pdf = app(StorybookPdfBuilder::class)->build($book);
+
+        $this->assertStringContainsString('Vazirmatn', $pdf);
+        $this->assertStringNotContainsString('NotoNaskhArabic', $pdf);
+    }
+
+    public function test_the_default_font_applies_to_languages_without_their_own(): void
+    {
+        config()->set('cubfable.pdf.fonts.default', 'luckiest-guy');
+
+        // An English classic book would normally use Cormorant; the default
+        // spec covers every language that has no override of its own.
+        $pdf = app(StorybookPdfBuilder::class)->build($this->illustratedBook(['language' => 'en', 'font' => 'classic']));
+
+        $this->assertStringContainsString('LuckiestGuy', $pdf);
+    }
+
+    public function test_a_custom_google_font_is_downloaded_and_embedded(): void
+    {
+        config()->set('cubfable.pdf.fonts.ar', 'Test Family');
+
+        // Arabic books request the arabic,latin subset; the cache is keyed
+        // by family + subset.
+        $fontPath = storage_path('app/pdf-fonts/google/test-family-arabiclatin.ttf');
+        File::delete($fontPath);
+
+        // Google's v1 CSS endpoint answers with a TrueType url; serve the
+        // bundled Amiri bytes as the downloaded font so the whole pipeline
+        // (css -> ttf -> TCPDF conversion -> embed) runs for real.
+        Http::fake([
+            'fonts.googleapis.com/*' => Http::response(
+                "@font-face { font-family: 'Test Family'; src: url(https://fonts.gstatic.com/s/testfamily/v1/abc.ttf) format('truetype'); }",
+            ),
+            'fonts.gstatic.com/*' => Http::response(
+                (string) file_get_contents(resource_path('fonts/Amiri-Regular.ttf')),
+            ),
+        ]);
+
+        $book = $this->illustratedBook(['language' => 'ar', 'font' => 'classic']);
         $book->pages()->update(['text' => 'وجدت ليلى فانوسًا مضيئًا في الغابة.']);
 
         $pdf = app(StorybookPdfBuilder::class)->build($book);
 
         $this->assertStringStartsWith('%PDF', $pdf);
-        // Amiri is embedded for Arabic-script story text.
+        // The downloaded file exists and its face (Amiri bytes) is embedded.
+        $this->assertFileExists($fontPath);
         $this->assertStringContainsString('Amiri', $pdf);
+
+        File::delete($fontPath);
+    }
+
+    public function test_a_failing_custom_font_download_falls_back_to_the_automatic_face(): void
+    {
+        config()->set('cubfable.pdf.fonts.ar', 'No Such Family');
+
+        File::delete(storage_path('app/pdf-fonts/google/no-such-family.ttf'));
+        Http::fake([
+            'fonts.googleapis.com/*' => Http::response('not found', 400),
+        ]);
+
+        $book = $this->illustratedBook(['language' => 'ar', 'font' => 'classic']);
+        $book->pages()->update(['text' => 'وجدت ليلى فانوسًا مضيئًا في الغابة.']);
+
+        $pdf = app(StorybookPdfBuilder::class)->build($book);
+
+        // classic auto-face steps in; the book still builds.
+        $this->assertStringStartsWith('%PDF', $pdf);
+        $this->assertStringContainsString('NotoNaskhArabic', $pdf);
+    }
+
+    public function test_a_font_without_arabic_presentation_forms_never_ships_tofu(): void
+    {
+        // A modern display font that "supports Arabic" in the browser but
+        // carries none of the presentation-form glyphs TCPDF shapes into:
+        // the guard must reject it, not print boxes. LuckiestGuy stands in
+        // as the downloaded bytes.
+        config()->set('cubfable.pdf.fonts.ar', 'Boxy Display');
+
+        File::delete(storage_path('app/pdf-fonts/google/boxy-display-arabiclatin.ttf'));
+        Http::fake([
+            'fonts.googleapis.com/*' => Http::response(
+                "@font-face { font-family: 'Boxy Display'; src: url(https://fonts.gstatic.com/s/boxy/v1/x.ttf) format('truetype'); }",
+            ),
+            'fonts.gstatic.com/*' => Http::response(
+                (string) file_get_contents(resource_path('fonts/LuckiestGuy-Regular.ttf')),
+            ),
+        ]);
+
+        $book = $this->illustratedBook(['language' => 'ar', 'font' => 'classic']);
+        $book->pages()->update(['text' => 'وجدت ليلى فانوسًا مضيئًا في الغابة.']);
+
+        $pdf = app(StorybookPdfBuilder::class)->build($book);
+
+        // The automatic classic face renders instead of the boxy pick.
+        $this->assertStringContainsString('NotoNaskhArabic', $pdf);
+
+        File::delete(storage_path('app/pdf-fonts/google/boxy-display-arabiclatin.ttf'));
+    }
+
+    public function test_shadda_vowel_marks_are_reordered_so_no_spacing_ligature_can_gap_a_word(): void
+    {
+        $builder = app(StorybookPdfBuilder::class);
+        $normalize = new \ReflectionMethod($builder, 'normalizeArabicMarks');
+
+        // lam + SHADDA + damma becomes lam + damma + shadda (canonically the
+        // same text): TCPDF then keeps two zero-width marks instead of the
+        // spacing U+FC61 ligature that rips a gap into the middle of words
+        // like "بَلُّورَات" in fonts whose ligature glyph has an advance.
+        $this->assertSame("\u{0644}\u{064F}\u{0651}", $normalize->invoke($builder, "\u{0644}\u{0651}\u{064F}"));
+
+        // Non-Arabic text passes through untouched.
+        $this->assertSame('hello', $normalize->invoke($builder, 'hello'));
     }
 
     public function test_arabic_story_text_lands_on_the_page_not_off_canvas(): void

@@ -1,3 +1,7 @@
+# Project Documentation
+
+- `docs/BUSINESS_LOGIC.md` is the plain-language source of truth for what the product does and why, written for non-technical readers. Whenever product behavior changes (pricing, wizard steps, templates, languages, generation pipeline behavior, PDF output, admin tools, roadmap status), update that document in the same piece of work and refresh its "Last updated" date. If a change contradicts the document, the document wins until the change is deliberate and documented.
+
 <laravel-boost-guidelines>
 === foundation rules ===
 
@@ -14,6 +18,7 @@ This application is a Laravel application and its main Laravel ecosystems packag
 - laravel/fortify (FORTIFY) - v1
 - laravel/framework (LARAVEL) - v13
 - laravel/prompts (PROMPTS) - v0
+- laravel/sanctum (SANCTUM) - v4
 - laravel/wayfinder (WAYFINDER) - v0
 - larastan/larastan (LARASTAN) - v3
 - laravel/boost (BOOST) - v2
@@ -213,3 +218,14 @@ Use Wayfinder to generate TypeScript functions for Laravel routes. Import from `
 - IMPORTANT: Activate `inertia-react-development` when working with Inertia React client-side patterns.
 
 </laravel-boost-guidelines>
+
+# Business logic documentation (MANDATORY)
+
+`docs/BUSINESS_LOGIC.md` is the living, non-technical description of how CubFable works as a product (the full A-to-Z business logic: customer journey, templates, wizard, payments, generation pipeline, PDF, admin area, roadmap). It is written for non-coders and is pasted into external AI tools for product discussions, so it must always be accurate and code-free.
+
+Rules:
+- Whenever you add, change, or remove anything that affects product behavior (pricing, wizard inputs, templates, languages, art styles, image engines, generation flow, statuses, PDF output, admin settings or tools, roadmap items), update `docs/BUSINESS_LOGIC.md` in the same task, before finishing.
+- Update the "Last updated" date at the top when you edit it.
+- Keep it plain-language: describe behavior and business rules, never code, file paths, or class names.
+- If a roadmap item from section 9 gets built, move it into the relevant section as shipped behavior and remove it from the roadmap.
+- Purely technical refactors that change no product behavior do not require an update.

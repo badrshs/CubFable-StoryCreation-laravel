@@ -6,6 +6,8 @@ use App\Models\Book;
 use App\Models\Template;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -53,6 +55,66 @@ class AdminTemplatesTest extends TestCase
                 ->component('admin/templates/index')
                 ->has('templates.data', 1)
                 ->where('templates.data.0.title', 'Moon Voyage'));
+    }
+
+    public function test_a_cover_can_be_generated_from_the_image_prompt(): void
+    {
+        config()->set('cubfable.ai.image_provider', 'openai');
+        config()->set('cubfable.ai.keys.openai', 'test-key');
+
+        $template = Template::factory()->create([
+            'title' => 'Cover Gen Test Template',
+            'cover_image_url' => 'data:image/svg+xml;base64,cGxhY2Vob2xkZXI=',
+            'image_prompt' => 'A cheerful watercolor meadow with a rainbow.',
+        ]);
+
+        // A real (tiny) PNG so the JPEG transcode has valid bytes.
+        $png = imagecreatetruecolor(8, 8);
+        ob_start();
+        imagepng($png);
+        $pngBytes = (string) ob_get_clean();
+        imagedestroy($png);
+
+        Http::fake([
+            'api.openai.com/v1/images/generations' => Http::response([
+                'data' => [['b64_json' => base64_encode($pngBytes)]],
+            ]),
+        ]);
+
+        $coverPath = public_path('images/templates/cover-gen-test-template.jpg');
+        File::delete($coverPath);
+
+        $this->actingAs($this->admin())
+            ->post("/admin/templates/{$template->id}/generate-cover")
+            ->assertRedirect();
+
+        $this->assertFileExists($coverPath);
+        $this->assertSame('/images/templates/cover-gen-test-template.jpg', $template->refresh()->cover_image_url);
+        // The stored file is a JPEG, matching every hand-made cover.
+        $this->assertStringStartsWith("\xFF\xD8", (string) file_get_contents($coverPath));
+        $this->assertDatabaseHas('ai_usage', ['provider' => 'openai', 'kind' => 'image', 'book_id' => null]);
+
+        File::delete($coverPath);
+    }
+
+    public function test_a_cover_cannot_be_generated_without_an_image_prompt(): void
+    {
+        $template = Template::factory()->create(['image_prompt' => '']);
+
+        $this->actingAs($this->admin())
+            ->from('/admin/templates')
+            ->post("/admin/templates/{$template->id}/generate-cover")
+            ->assertSessionHasErrors('template');
+    }
+
+    public function test_non_admins_cannot_generate_covers(): void
+    {
+        $template = Template::factory()->create();
+        $user = User::factory()->create(['is_admin' => false]);
+
+        $this->actingAs($user)
+            ->post("/admin/templates/{$template->id}/generate-cover")
+            ->assertNotFound();
     }
 
     public function test_a_template_can_be_created(): void

@@ -46,6 +46,25 @@ class ReferencePolicy
             return 1;
         }
 
+        // gpt-image-1's edits endpoint takes a multi-image array; capped at
+        // 6 like every array engine.
+        if ($provider === 'openai') {
+            return $cap > 0 ? min($cap, 6) : 6;
+        }
+
+        // Gemini image models take inline reference parts (capped like the
+        // array engines), but Imagen models run the prompt-only :predict
+        // endpoint, so identity must switch to text descriptions.
+        if ($provider === 'gemini') {
+            $model = strtolower((string) config('cubfable.ai.models.image.gemini'));
+
+            if (str_starts_with($model, 'imagen')) {
+                return 0;
+            }
+
+            return $cap > 0 ? min($cap, 6) : 6;
+        }
+
         // Replicate depends on the model. Cataloged engines answer from
         // their verified capabilities: none (text-only identity), a
         // multi-image array capped at 6 like every array engine, or a

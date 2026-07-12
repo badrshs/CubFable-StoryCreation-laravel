@@ -46,7 +46,7 @@ class TemplateSeeder extends Seeder
      */
     public function run(): void
     {
-        $allTemplates = array_merge($this->starterTemplates(), $this->ideaTemplates());
+        $allTemplates = $this->ideaTemplates();
 
         foreach ($allTemplates as $template) {
             // cover_image_url is always recomputed by cover(): it picks up the
@@ -58,6 +58,11 @@ class TemplateSeeder extends Seeder
                 $template,
             );
         }
+
+        Template::query()
+            ->whereNotIn('title', array_column($allTemplates, 'title'))
+            ->doesntHave('books')
+            ->delete();
     }
 
     /**

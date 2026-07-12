@@ -431,6 +431,7 @@
   "templates.noMatchesDescription": "Try a different word, age or world - every story is waiting somewhere.",
   "templates.clearFilters": "Show every story",
   "admin.nav.logs": "Logs",
+  "admin.nav.moderation": "Review queue",
   "crop.title": "Frame your character",
   "crop.hint": "Move and zoom until the person fills the frame - this becomes the picture the artist works from.",
   "crop.zoom": "Zoom",

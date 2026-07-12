@@ -431,6 +431,7 @@
   "templates.noMatchesDescription": "Versuche ein anderes Wort, Alter oder eine andere Welt.",
   "templates.clearFilters": "Alle Geschichten zeigen",
   "admin.nav.logs": "Protokolle",
+  "admin.nav.moderation": "Prüfliste",
   "crop.title": "Rahme deine Figur ein",
   "crop.hint": "Verschiebe und zoome, bis die Person den Rahmen füllt - dieses Bild dient dem Künstler als Vorlage.",
   "crop.zoom": "Zoom",

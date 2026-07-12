@@ -46,6 +46,8 @@ type Props = {
     pdfPageSizes: { key: string; label: string }[];
     replicateEngines: ReplicateEngineOption[];
     imageAspectRatios: string[];
+    storyLanguages: { code: string; label: string }[];
+    bundledFaces: string[];
 };
 
 type ReplicateEngineOption = {
@@ -174,6 +176,8 @@ export default function AdminSettings({
     pdfPageSizes,
     replicateEngines,
     imageAspectRatios,
+    storyLanguages,
+    bundledFaces,
 }: Props) {
     const initial: Record<string, string | number | boolean> = {};
 
@@ -233,6 +237,7 @@ export default function AdminSettings({
             size: String(form.data.pdf_page_size ?? ''),
             variant: previewVariant,
             fit: String(form.data.pdf_image_fit ?? 'crop'),
+            font: String(form.data.pdf_font_default ?? ''),
         });
 
         window.open(`/admin/settings/pdf-preview?${query}`, '_blank');
@@ -610,8 +615,73 @@ export default function AdminSettings({
                                 ) : (
                                     <Check className="h-4 w-4" />
                                 )}
-                                Save size
+                                Save PDF settings
                             </Button>
+                        </div>
+
+                        {/* Story fonts: one default for every language, plus
+                            per-language overrides. */}
+                        <div className="rounded-xl border border-card-border bg-muted/20 p-4">
+                            <div className="mb-3 max-w-md">
+                                <Field
+                                    label="Default story font (all languages)"
+                                    hint={`Empty or "auto" keeps the automatic per-style faces. Bundled: ${bundledFaces.join(', ')}. Anything else is fetched from Google Fonts by family name (e.g. Cairo).`}
+                                    overridden={
+                                        settings.pdf_font_default?.overridden
+                                    }
+                                >
+                                    <Input
+                                        placeholder="auto"
+                                        value={String(
+                                            form.data.pdf_font_default ?? '',
+                                        )}
+                                        onChange={(e) =>
+                                            form.setData(
+                                                'pdf_font_default',
+                                                e.target.value,
+                                            )
+                                        }
+                                    />
+                                    {form.errors.pdf_font_default && (
+                                        <p className="text-xs text-destructive">
+                                            {form.errors.pdf_font_default}
+                                        </p>
+                                    )}
+                                </Field>
+                            </div>
+                            <p className="mb-2 text-xs text-muted-foreground">
+                                Per-language overrides (win over the default;
+                                empty inherits it). Make sure the font
+                                supports that language's script.
+                            </p>
+                            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                                {storyLanguages.map((language) => (
+                                    <Field
+                                        key={language.code}
+                                        label={language.label}
+                                        overridden={
+                                            settings[
+                                                `pdf_font_${language.code}`
+                                            ]?.overridden
+                                        }
+                                    >
+                                        <Input
+                                            placeholder="default"
+                                            value={String(
+                                                form.data[
+                                                    `pdf_font_${language.code}`
+                                                ] ?? '',
+                                            )}
+                                            onChange={(e) =>
+                                                form.setData(
+                                                    `pdf_font_${language.code}`,
+                                                    e.target.value,
+                                                )
+                                            }
+                                        />
+                                    </Field>
+                                ))}
+                            </div>
                         </div>
 
                         <div className="flex flex-wrap items-end gap-3 rounded-xl border border-card-border bg-muted/20 p-4">
@@ -766,6 +836,11 @@ export default function AdminSettings({
                                         'max_image_references',
                                         'Max reference images per request',
                                         '0 = unlimited.',
+                                    )}
+                                    {text(
+                                        'image_fallback_engines',
+                                        'Content-flag fallback engines',
+                                        'Tried in order when an engine refuses an image as sensitive: provider:model, comma-separated. Round 1 keeps the original prompt across the whole chain; the prompt is rewritten once only after every engine refused. Empty disables the chain.',
                                     )}
                                     {select(
                                         'photo_upload_quality',

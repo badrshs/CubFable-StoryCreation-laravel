@@ -34,8 +34,10 @@ class OpenAiProvider implements AiProvider
     }
 
     /**
-     * Generate an image via gpt-image-1. The edit/reference flow is used with
-     * the first reference (the main character) when one is present.
+     * Generate an image via gpt-image-1. The edit/reference flow carries
+     * every reference (the edits endpoint takes a multi-image array), in the
+     * composer's order, so "reference image N" in the prompt always points
+     * at an image that actually travelled.
      *
      * @param  list<ImageReference>  $references
      */
@@ -44,10 +46,19 @@ class OpenAiProvider implements AiProvider
         $model = (string) config('cubfable.ai.models.image.openai');
         $size = $this->nearestSupportedSize($size);
 
-        $primary = $references[0] ?? null;
-        $parts = $primary instanceof ImageReference ? $this->parseImageDataUrl($primary->dataUrl()) : null;
+        $attachments = [];
 
-        if ($parts === null) {
+        foreach ($references as $reference) {
+            $parts = $this->parseImageDataUrl($reference->dataUrl());
+
+            if ($parts !== null) {
+                $position = count($attachments) + 1;
+                $parts['filename'] = "reference-{$position}.".pathinfo($parts['filename'], PATHINFO_EXTENSION);
+                $attachments[] = $parts;
+            }
+        }
+
+        if ($attachments === []) {
             $response = Http::timeout(180)
                 ->withToken($this->apiKey())
                 ->post($this->baseUrl().'/images/generations', [
@@ -57,9 +68,14 @@ class OpenAiProvider implements AiProvider
                 ])
                 ->throw();
         } else {
-            $response = Http::timeout(180)
-                ->withToken($this->apiKey())
-                ->attach('image', $parts['bytes'], $parts['filename'], ['Content-Type' => $parts['type']])
+            $request = Http::timeout(180)->withToken($this->apiKey());
+            $field = count($attachments) === 1 ? 'image' : 'image[]';
+
+            foreach ($attachments as $parts) {
+                $request = $request->attach($field, $parts['bytes'], $parts['filename'], ['Content-Type' => $parts['type']]);
+            }
+
+            $response = $request
                 ->post($this->baseUrl().'/images/edits', [
                     'model' => $model,
                     'prompt' => $prompt,

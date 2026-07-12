@@ -10,7 +10,7 @@ namespace App\Services\AI;
  */
 class ImageSizePolicy
 {
-    private const DEFAULT_RATIO = '9:16';
+    private const DEFAULT_RATIO = '3:4';
 
     /**
      * One canonical size per selectable ratio, long side 1536.
@@ -18,13 +18,13 @@ class ImageSizePolicy
      * @var array<string, string>
      */
     private const SIZES = [
+        '3:4' => '1152x1536',
+        '4:3' => '1536x1152',
         '9:16' => '864x1536',
         '16:9' => '1536x864',
         '2:3' => '1024x1536',
         '3:2' => '1536x1024',
         '1:1' => '1024x1024',
-        '3:4' => '1152x1536',
-        '4:3' => '1536x1152',
         '4:5' => '1229x1536',
         '5:4' => '1536x1229',
     ];

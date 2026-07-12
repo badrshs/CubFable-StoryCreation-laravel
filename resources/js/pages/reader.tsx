@@ -434,7 +434,10 @@ export default function Reader({ book }: ReaderProps) {
                                 >
                                     {/* Illustration page */}
                                     <div className="relative flex items-center justify-center p-5 sm:p-6">
-                                        <div className="relative aspect-square w-full overflow-hidden rounded-[6px] bg-[#1a1440] shadow-[inset_0_2px_8px_rgba(0,0,0,0.3)] ring-1 ring-black/10">
+                                        {/* 3:4 matches the generated art exactly; older books
+                                            (landscape or 9:16 eras) letterbox on the dark mat
+                                            instead of being cropped. */}
+                                        <div className="relative aspect-[3/4] w-full overflow-hidden rounded-[6px] bg-[#1a1440] shadow-[inset_0_2px_8px_rgba(0,0,0,0.3)] ring-1 ring-black/10">
                                             {page.status === 'generating' ||
                                             page.status === 'pending' ? (
                                                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
@@ -451,7 +454,7 @@ export default function Reader({ book }: ReaderProps) {
                                                     alt={t('reader.pageAlt', {
                                                         number: page.pageNumber,
                                                     })}
-                                                    className="h-full w-full object-cover"
+                                                    className="h-full w-full object-contain"
                                                 />
                                             ) : (
                                                 <div className="absolute inset-0 flex items-center justify-center">

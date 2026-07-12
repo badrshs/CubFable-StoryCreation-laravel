@@ -70,8 +70,14 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
     Route::get('templates/create', [Admin\TemplateController::class, 'create'])->name('admin.templates.create');
     Route::post('templates', [Admin\TemplateController::class, 'store'])->name('admin.templates.store');
     Route::get('templates/{id}/edit', [Admin\TemplateController::class, 'edit'])->whereNumber('id')->name('admin.templates.edit');
+    Route::post('templates/{id}/generate-cover', [Admin\TemplateController::class, 'generateCover'])->whereNumber('id')->name('admin.templates.generate-cover');
     Route::put('templates/{id}', [Admin\TemplateController::class, 'update'])->whereNumber('id')->name('admin.templates.update');
     Route::delete('templates/{id}', [Admin\TemplateController::class, 'destroy'])->whereNumber('id')->name('admin.templates.destroy');
+
+    Route::get('moderation', [Admin\ModerationController::class, 'index'])->name('admin.moderation');
+    Route::post('moderation/pages/{id}/dismiss', [Admin\ModerationController::class, 'dismissPage'])->whereNumber('id')->name('admin.moderation.pages.dismiss');
+    Route::post('moderation/books/{id}/cover/dismiss', [Admin\ModerationController::class, 'dismissCover'])->whereNumber('id')->name('admin.moderation.cover.dismiss');
+    Route::put('moderation/pages/{id}/scene', [Admin\ModerationController::class, 'updateScene'])->whereNumber('id')->name('admin.moderation.pages.scene');
 
     Route::get('logs', [Admin\LogController::class, 'index'])->name('admin.logs');
     Route::get('logs/download', [Admin\LogController::class, 'download'])->name('admin.logs.download');

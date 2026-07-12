@@ -29,11 +29,26 @@ return [
         'page_size' => (string) env('PDF_PAGE_SIZE', 'square-210'),
 
         /*
-         * How book art sits on the page: 'crop' scales each image to fill
-         * its area (edges are cropped when the ratios differ), 'full' shows
-         * the whole image, letterboxed on the page background when needed.
+         * How book art sits on the page: 'overlay' bleeds the illustration
+         * across the whole page with the story text on a translucent panel
+         * (crops the least on portrait pages), 'crop' scales each image to
+         * fill a landscape band (edges are cropped when the ratios differ),
+         * 'full' shows the whole image, letterboxed when needed.
          */
-        'image_fit' => (string) env('PDF_IMAGE_FIT', 'crop'),
+        'image_fit' => (string) env('PDF_IMAGE_FIT', 'overlay'),
+
+        /*
+         * Story fonts by language (settings pdf_font_default and
+         * pdf_font_<lang>). Each value is a bundled face slug (scheherazade,
+         * harmattan, aref-ruqaa, almarai, amiri, baloo, cormorant,
+         * patrick-hand, luckiest-guy) or a Google Fonts family name
+         * downloaded at build time. A language without a value inherits the
+         * default; empty/auto default keeps the automatic per-style,
+         * per-script behavior.
+         */
+        'fonts' => [
+            'default' => (string) env('PDF_FONT_DEFAULT', ''),
+        ],
     ],
 
     /*
@@ -168,9 +183,11 @@ return [
          * The aspect ratio every page and cover is generated at. Engines
          * that only accept their own ratio presets get the closest one they
          * support. The character sheet stays portrait regardless; it is an
-         * identity reference, not book art.
+         * identity reference, not book art. 3:4 matches the cover shelf and
+         * reader frames exactly and nearly fills portrait PDF pages, so the
+         * art survives every surface with minimal cropping.
          */
-        'image_aspect_ratio' => (string) env('IMAGE_ASPECT_RATIO', '9:16'),
+        'image_aspect_ratio' => (string) env('IMAGE_ASPECT_RATIO', '3:4'),
 
         /*
          * Some image models cap how many reference images a request may
@@ -179,6 +196,17 @@ return [
          * important ones.
          */
         'max_image_references' => (int) env('IMAGE_MAX_REFERENCES', 0),
+
+        /*
+         * The engines tried, in order, when the main engine refuses an image
+         * on content grounds. Comma-separated provider:model entries. Round
+         * one runs the ORIGINAL prompt through the main engine and then this
+         * chain; only when the whole chain refuses is the prompt rewritten
+         * once and the chain run again. After two rounds the item is flagged
+         * for admin review. Empty disables the chain (rewrite-only retry).
+         * Content-refused attempts cost nothing on Replicate official models.
+         */
+        'fallback_engines' => (string) env('IMAGE_FALLBACK_ENGINES', 'replicate:bytedance/seedream-4.5,replicate:google/nano-banana-pro,replicate:black-forest-labs/flux-2-pro'),
 
         /*
          * Render all of a book's pages as ONE coherent set when the engine

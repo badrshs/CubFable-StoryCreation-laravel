@@ -51,6 +51,26 @@ class StoryCraftRulesTest extends TestCase
         $this->assertStringContainsString('Write exactly 3 pages', $authorPrompt);
     }
 
+    public function test_the_author_prompt_carries_the_template_premise(): void
+    {
+        [$book, $cast, $main] = $this->bookWithCast();
+
+        $template = Template::query()->findOrFail($book->template_id);
+        $template->update([
+            'title' => "Teddy's Turn to Share",
+            'description' => 'Teddy learns that sharing his favorite bear makes playtime twice as fun.',
+        ]);
+
+        $prompt = app(StoryPromptComposer::class)->authorPrompt($book, 3, $cast, $main, $template->refresh());
+
+        // The curated premise is the plot, not just a keyword hint.
+        $this->assertStringContainsString("Teddy's Turn to Share", $prompt);
+        $this->assertStringContainsString('sharing his favorite bear makes playtime twice as fun', $prompt);
+
+        // Without a template the prompt still composes (playground fallback).
+        $this->assertStringNotContainsString('Premise', app(StoryPromptComposer::class)->authorPrompt($book, 3, $cast, $main));
+    }
+
     public function test_the_writing_rules_demand_a_purposeful_story_and_ban_nonsense_sounds(): void
     {
         $rules = (new StoryCraftRules)->writingRules('Mia', '4-6', 'Arabic');

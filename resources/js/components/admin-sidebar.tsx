@@ -7,6 +7,7 @@ import {
     LibraryBig,
     ScrollText,
     Settings2,
+    ShieldAlert,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavFooter } from '@/components/nav-footer';
@@ -32,6 +33,11 @@ export function AdminSidebar() {
     const mainNavItems: NavItem[] = [
         { title: t('admin.nav.dashboard'), href: '/admin', icon: LayoutGrid },
         { title: t('admin.nav.books'), href: '/admin/books', icon: BookMarked },
+        {
+            title: t('admin.nav.moderation'),
+            href: '/admin/moderation',
+            icon: ShieldAlert,
+        },
         {
             title: t('admin.nav.templates'),
             href: '/admin/templates',

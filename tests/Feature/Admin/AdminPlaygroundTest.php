@@ -37,7 +37,10 @@ class AdminPlaygroundTest extends TestCase
     public function test_preview_composes_prompts_for_an_existing_book_without_any_ai_call(): void
     {
         $user = User::factory()->create();
-        $template = Template::factory()->create(['page_count' => 3]);
+        $template = Template::factory()->create([
+            'page_count' => 3,
+            'description' => 'A pearl goes missing from the reef and only the bravest diver can find it.',
+        ]);
         $book = Book::factory()->complete()->for($user)->for($template)->create(['child_name' => 'Mia']);
 
         $character = Character::factory()->for($user)->create([
@@ -52,6 +55,7 @@ class AdminPlaygroundTest extends TestCase
             ->json();
 
         $this->assertStringContainsString('Mia', $response['prompts']['blueprint']);
+        $this->assertStringContainsString('A pearl goes missing from the reef', $response['prompts']['blueprint']);
         $this->assertStringContainsString('Front cover', $response['prompts']['cover']);
         $this->assertStringContainsString('page 1', $response['prompts']['page']);
 

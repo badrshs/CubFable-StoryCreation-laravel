@@ -431,6 +431,7 @@
   "templates.noMatchesDescription": "Essayez un autre mot, âge ou monde : chaque histoire attend quelque part.",
   "templates.clearFilters": "Voir toutes les histoires",
   "admin.nav.logs": "Journaux",
+  "admin.nav.moderation": "File de révision",
   "crop.title": "Cadrez votre personnage",
   "crop.hint": "Déplacez et zoomez jusqu'à ce que la personne remplisse le cadre : ce sera l'image de référence de l'artiste.",
   "crop.zoom": "Zoom",

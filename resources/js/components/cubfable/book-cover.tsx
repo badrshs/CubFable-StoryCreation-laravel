@@ -59,7 +59,10 @@ export default function BookCover({
                         <img
                             src={coverImageUrl}
                             alt=""
-                            className="absolute inset-0 h-full w-full object-cover"
+                            // object-top: 3:4 covers fill the frame exactly;
+                            // taller legacy covers crop from the bottom so the
+                            // painted title near the top is never clipped.
+                            className="absolute inset-0 h-full w-full object-cover object-top"
                         />
                     ) : (
                         <div className="flex h-full w-full items-center justify-center">

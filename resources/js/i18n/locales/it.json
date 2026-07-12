@@ -431,6 +431,7 @@
   "templates.noMatchesDescription": "Prova un'altra parola, età o mondo: ogni storia aspetta da qualche parte.",
   "templates.clearFilters": "Mostra tutte le storie",
   "admin.nav.logs": "Log",
+  "admin.nav.moderation": "Coda di revisione",
   "crop.title": "Inquadra il tuo personaggio",
   "crop.hint": "Sposta e ingrandisci finché la persona riempie il riquadro: questa sarà l'immagine di riferimento dell'artista.",
   "crop.zoom": "Zoom",

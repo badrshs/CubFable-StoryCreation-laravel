@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\BookStatus;
 use App\Enums\PageStatus;
+use App\Exceptions\ImageFlaggedSensitiveException;
 use App\Models\Book;
 use App\Models\Character;
 use App\Models\ImagePrompt;
@@ -90,7 +91,8 @@ class StoryGenerator
             $book->update(['status' => BookStatus::Generating]);
             $this->startFlowSession($book);
 
-            $pageCount = Template::query()->findOrFail($book->template_id)->page_count;
+            $template = Template::query()->findOrFail($book->template_id);
+            $pageCount = $template->page_count;
 
             $cast = $this->castFor($book);
 
@@ -110,7 +112,7 @@ class StoryGenerator
             if ($pages === []) {
                 // The book bible: localized text plus English art direction
                 // (world, color script, motif, per-page shots).
-                $blueprint = $this->generateStoryBlueprint($book, $pageCount, $cast, $main);
+                $blueprint = $this->generateStoryBlueprint($book, $pageCount, $cast, $main, $template);
                 $pages = $this->persistBlueprint($book, $blueprint);
                 Log::info('Story blueprint written and persisted.', ['pages' => count($pages)]);
             }
@@ -129,9 +131,17 @@ class StoryGenerator
 
             // Cover (generated WITH the title; the decorative frame is added
             // in the UI). Skipped when a previous run already produced one.
+            // A cover every engine refuses on content grounds is parked for
+            // admin review instead of failing the whole paid book.
             if ($book->cover_image_path === null) {
                 $this->abortIfStopRequested($book);
-                $this->storeCover($book, $main, $anchor);
+
+                try {
+                    $this->storeCover($book, $main, $anchor);
+                } catch (ImageFlaggedSensitiveException $exception) {
+                    Log::error("Cover flagged as sensitive by every engine: {$exception->getMessage()}");
+                    $book->update(['cover_flagged_at' => now()]);
+                }
             }
 
             // A fresh book renders every page as ONE coherent set when the
@@ -162,6 +172,9 @@ class StoryGenerator
 
                 try {
                     $this->storePageIllustration($page, $book, $cast, $main, $anchor);
+                } catch (ImageFlaggedSensitiveException $exception) {
+                    Log::error("Page {$page->page_number} flagged as sensitive by every engine: {$exception->getMessage()}");
+                    $page->update(['status' => PageStatus::Failed, 'flagged_at' => now()]);
                 } catch (Throwable $exception) {
                     Log::error("Failed to generate image for page {$page->page_number}: {$exception->getMessage()}");
                     $page->update(['status' => PageStatus::Failed]);
@@ -197,9 +210,18 @@ class StoryGenerator
             }
 
             $this->storePageIllustration($page, $book, $cast, $main, $this->references->anchorsWithSheet($main) ? $this->anchorFor($book) : null);
+        } catch (ImageFlaggedSensitiveException $exception) {
+            // Park it for review. A page that already has a good image keeps
+            // it (and its Complete status): a failed regeneration must never
+            // destroy paid work.
+            Log::error("Failed to regenerate page {$page->id}: flagged as sensitive by every engine: {$exception->getMessage()}");
+            $page->update(['flagged_at' => now(), ...($page->image_path === null ? ['status' => PageStatus::Failed] : [])]);
         } catch (Throwable $exception) {
             Log::error("Failed to regenerate page {$page->id}: {$exception->getMessage()}");
-            $page->update(['status' => PageStatus::Failed]);
+
+            if ($page->image_path === null) {
+                $page->update(['status' => PageStatus::Failed]);
+            }
         } finally {
             $this->usage->flush($book->id);
         }
@@ -229,6 +251,10 @@ class StoryGenerator
 
             $this->storeCover($book, $main, $this->references->anchorsWithSheet($main) ? $this->anchorFor($book) : null);
             $book->update(['cover_status' => null]);
+        } catch (ImageFlaggedSensitiveException $exception) {
+            Log::error("Failed to regenerate cover for book {$book->id}: flagged as sensitive by every engine: {$exception->getMessage()}");
+            $book->update(['cover_status' => 'failed', 'cover_flagged_at' => now()]);
+            $failure = $exception;
         } catch (Throwable $exception) {
             Log::error("Failed to regenerate cover for book {$book->id}: {$exception->getMessage()}");
             $book->update(['cover_status' => 'failed']);
@@ -311,9 +337,9 @@ class StoryGenerator
      * @param  Collection<int, Character>  $cast
      * @return array{subtitle: ?string, world: ?string, motif: ?string, refrain: ?string, colorScript: ?list<string>, cover: ?array<string, string>, pages: list<array{text: string, scene: string, artDirection: ?array<string, string>}>}
      */
-    private function generateStoryBlueprint(Book $book, int $pageCount, Collection $cast, Character $main): array
+    private function generateStoryBlueprint(Book $book, int $pageCount, Collection $cast, Character $main, ?Template $template = null): array
     {
-        $content = $this->ai->generateText($this->storyPrompts->authorPrompt($book, $pageCount, $cast, $main));
+        $content = $this->ai->generateText($this->storyPrompts->authorPrompt($book, $pageCount, $cast, $main, $template));
 
         return $this->parseBlueprint($content, $pageCount);
     }
@@ -355,7 +381,7 @@ class StoryGenerator
         ]);
 
         return [
-            'blueprint' => $this->storyPrompts->authorPrompt($book, $pageCount, $cast, $main),
+            'blueprint' => $this->storyPrompts->authorPrompt($book, $pageCount, $cast, $main, $template),
             'sheet' => $this->references->anchorsWithSheet($main) ? $this->imagePrompts->sheet($book, $main)['prompt'] : null,
             'cover' => $this->imagePrompts->cover($book, $main, $anchor)['prompt'],
             'page' => $this->imagePrompts->page($book, $page, $cast, $main, $anchor)['prompt'],
@@ -511,7 +537,10 @@ class StoryGenerator
     {
         ['prompt' => $prompt, 'references' => $references] = $this->imagePrompts->sheet($book, $main);
 
-        return $this->safeImages->generate($prompt, $this->sizes->sheetSize(), $references, 'character sheet', new PromptLogContext($book->id, 'character-sheet'));
+        // The sheet anchors identity for every other image, so it never
+        // walks the engine chain: a sheet drawn by a different engine would
+        // subtly change the hero's look across the whole book.
+        return $this->safeImages->generate($prompt, $this->sizes->sheetSize(), $references, 'character sheet', new PromptLogContext($book->id, 'character-sheet'), null, false);
     }
 
     /**
@@ -535,9 +564,11 @@ class StoryGenerator
      */
     private function generatePageImage(Page $page, Book $book, Collection $cast, Character $main, ?ImageReference $anchor = null): GeneratedImage
     {
-        ['prompt' => $prompt, 'references' => $references] = $this->imagePrompts->page($book, $page, $cast, $main, $anchor);
+        // Composed per engine: a fallback engine gets a prompt built for its
+        // own reference budget, never a stale one with dangling pointers.
+        $compose = fn (): array => $this->imagePrompts->page($book, $page, $cast, $main, $anchor);
 
-        return $this->safeImages->generate($prompt, $this->sizes->bookSize(), $references, "page {$page->page_number}", new PromptLogContext($book->id, 'page', $page->id));
+        return $this->safeImages->generate('', $this->sizes->bookSize(), [], "page {$page->page_number}", new PromptLogContext($book->id, 'page', $page->id), $compose);
     }
 
     /**
@@ -547,9 +578,10 @@ class StoryGenerator
      */
     private function generateCoverImage(Book $book, Character $main, ?ImageReference $anchor = null): GeneratedImage
     {
-        ['prompt' => $coverPrompt, 'references' => $coverReferences] = $this->imagePrompts->cover($book, $main, $anchor);
+        // Composed per engine, like the pages.
+        $compose = fn (): array => $this->imagePrompts->cover($book, $main, $anchor);
 
-        return $this->safeImages->generate($coverPrompt, $this->sizes->bookSize(), $coverReferences, 'cover', new PromptLogContext($book->id, 'cover'));
+        return $this->safeImages->generate('', $this->sizes->bookSize(), [], 'cover', new PromptLogContext($book->id, 'cover'), $compose);
     }
 
     /**
@@ -565,7 +597,7 @@ class StoryGenerator
             $path = sprintf('books/%d/cover-%s.png', $book->id, Str::lower(Str::random(8)));
 
             $this->images->storeGenerated($image->bytes, $path);
-            $book->update(['cover_image_path' => $path, 'cover_prompt' => $image->prompt]);
+            $book->update(['cover_image_path' => $path, 'cover_prompt' => $image->prompt, 'cover_flagged_at' => null]);
 
             // The replaced file stays on disk as a restorable version.
             ImageVersion::query()->create(['book_id' => $book->id, 'slot' => 'cover', 'path' => $path, 'prompt' => $image->prompt, ...$this->currentEngine()]);
@@ -622,7 +654,7 @@ class StoryGenerator
         $path = sprintf('books/%d/pages/%d-%s.png', $book->id, $page->page_number, Str::lower(Str::random(8)));
 
         $this->images->storeGenerated($image->bytes, $path);
-        $page->update(['image_path' => $path, 'image_prompt' => $image->prompt, 'status' => PageStatus::Complete]);
+        $page->update(['image_path' => $path, 'image_prompt' => $image->prompt, 'status' => PageStatus::Complete, 'flagged_at' => null]);
 
         // The replaced file stays on disk as a restorable version.
         ImageVersion::query()->create(['book_id' => $book->id, 'page_id' => $page->id, 'page_number' => $page->page_number, 'slot' => 'page', 'path' => $path, 'prompt' => $image->prompt, ...$this->currentEngine()]);

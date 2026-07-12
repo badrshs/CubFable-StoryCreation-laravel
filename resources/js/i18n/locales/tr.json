@@ -431,6 +431,7 @@
   "templates.noMatchesDescription": "Başka bir kelime, yaş veya dünya dene - her hikâye bir yerde bekliyor.",
   "templates.clearFilters": "Tüm hikâyeleri göster",
   "admin.nav.logs": "Kayıtlar",
+  "admin.nav.moderation": "İnceleme kuyruğu",
   "crop.title": "Karakterini çerçevele",
   "crop.hint": "Kişi çerçeveyi dolduruncaya kadar taşı ve yakınlaştır - sanatçının çalışacağı görsel bu olacak.",
   "crop.zoom": "Yakınlaştır",

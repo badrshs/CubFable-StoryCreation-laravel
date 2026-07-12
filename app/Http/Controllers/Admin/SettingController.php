@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\StoryLanguage;
 use App\Http\Controllers\Controller;
 use App\Models\Book;
 use App\Services\AI\ImageSizePolicy;
@@ -29,6 +30,11 @@ class SettingController extends Controller
             'pdfPageSizes' => PageSize::options(),
             'replicateEngines' => $catalog->options(),
             'imageAspectRatios' => ImageSizePolicy::selectableRatios(),
+            'storyLanguages' => array_map(
+                fn (StoryLanguage $language): array => ['code' => $language->value, 'label' => $language->label()],
+                StoryLanguage::cases(),
+            ),
+            'bundledFaces' => StorybookPdfBuilder::bundledFaceKeys(),
         ]);
     }
 
@@ -44,9 +50,16 @@ class SettingController extends Controller
             'size' => ['required', Rule::in(PageSize::keys())],
             'variant' => ['required', 'in:home,print'],
             'fit' => ['nullable', 'in:crop,full,overlay'],
+            'font' => ['nullable', 'string', 'max:120'],
         ]);
 
         $book = Book::query()->findOrFail((int) $validated['bookId']);
+
+        // Preview any story face without saving it (request-scoped config):
+        // the given spec is applied to this book's language.
+        if (($validated['font'] ?? null) !== null && trim((string) $validated['font']) !== '') {
+            config()->set('cubfable.pdf.fonts.'.$book->language, trim((string) $validated['font']));
+        }
 
         $pdfBytes = $builder->build($book, $validated['variant'], $validated['size'], $validated['fit'] ?? null);
 
@@ -63,7 +76,14 @@ class SettingController extends Controller
      */
     public function update(Request $request, AppSettings $settings): RedirectResponse
     {
-        $validated = $request->validate([
+        // One optional story-font spec per language, plus the default.
+        $fontRules = ['pdf_font_default' => ['nullable', 'string', 'max:120']];
+
+        foreach (StoryLanguage::cases() as $language) {
+            $fontRules["pdf_font_{$language->value}"] = ['nullable', 'string', 'max:120'];
+        }
+
+        $validated = $request->validate([...$fontRules,
             'text_provider' => ['required', 'in:openai,gemini,openrouter'],
             'image_provider' => ['required', 'in:openai,gemini,openrouter,flow,grok,piapi,replicate'],
             'text_model_openai' => ['required', 'string', 'max:120'],
@@ -79,6 +99,7 @@ class SettingController extends Controller
             'vision_model_openrouter' => ['nullable', 'string', 'max:120'],
             'identity_reference' => ['required', 'in:sheet,photo'],
             'max_image_references' => ['required', 'integer', 'between:0,8'],
+            'image_fallback_engines' => ['nullable', 'string', 'max:500', 'regex:/^\s*$|^\s*(openai|gemini|openrouter|flow|grok|piapi|replicate):[^,]+(\s*,\s*(openai|gemini|openrouter|flow|grok|piapi|replicate):[^,]+)*\s*$/i'],
             'image_group_generation' => ['required', 'boolean'],
             'image_quality' => ['required', 'in:standard,high,max'],
             'image_aspect_ratio' => ['required', Rule::in(ImageSizePolicy::selectableRatios())],
@@ -97,9 +118,18 @@ class SettingController extends Controller
         // The vision override is optional; empty string means "follow text model".
         $validated['vision_model_openrouter'] = (string) ($validated['vision_model_openrouter'] ?? '');
 
+        // The fallback chain is optional; empty disables engine fallback.
+        $validated['image_fallback_engines'] = (string) ($validated['image_fallback_engines'] ?? '');
+
         // The cover engine is optional too; empty means "same as main engine".
         $validated['cover_image_provider'] = (string) ($validated['cover_image_provider'] ?? '');
         $validated['cover_image_model'] = (string) ($validated['cover_image_model'] ?? '');
+
+        // Font specs are optional; empty means inherit (language -> default
+        // -> automatic per-style face).
+        foreach (array_keys($fontRules) as $fontKey) {
+            $validated[$fontKey] = (string) ($validated[$fontKey] ?? '');
+        }
 
         $settings->set($validated);
 

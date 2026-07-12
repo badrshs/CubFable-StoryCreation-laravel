@@ -2,87 +2,210 @@
 
 namespace App\Services\AI;
 
+use App\Exceptions\ImageContentRejectedException;
+use App\Exceptions\ImageFlaggedSensitiveException;
 use App\Models\ImagePrompt;
 use App\Services\Prompts\SafetyPrompts;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Generate an image, retrying with progressively "safer" prompts when the
- * provider refuses on content grounds. Up to 3 retries after the first attempt:
- *   1. original prompt
- *   2. deterministic scrub (free)
- *   3. AI-rephrased prompt (one text call)
- *   4. AI-rephrased prompt with the reference photo dropped (a real child's
- *      photo can itself trip the minor-safety filter)
- * Refused image attempts are not billed by Gemini, so the only added cost is
- * the single text rewrite.
+ * Generate an image with content-flag recovery that changes the ENGINE
+ * before it ever changes the prompt:
+ *
+ *   Round 1: the ORIGINAL prompt on the active engine, then on every engine
+ *            of the configured fallback chain.
+ *   Round 2: only when the whole chain refused on content grounds, the
+ *            prompt is rewritten once (one text call) and the same engine
+ *            order runs again.
+ *
+ * After both rounds the image is flagged for admin review
+ * (ImageFlaggedSensitiveException) - never retried further.
+ *
+ * Transient errors (429/5xx/timeouts) retry the same engine once and never
+ * trigger a rewrite; config/auth errors fail fast on the active engine and
+ * simply skip a dead fallback engine. Content-refused attempts are not
+ * billed by Replicate official models or Gemini, so the only added cost of
+ * a full walk is the single text rewrite.
  */
 class SafeImageGenerator
 {
+    /**
+     * Tries per engine slot when the failure is transient (not content).
+     */
+    private const TRANSIENT_TRIES = 2;
+
     public function __construct(
         private AiManager $ai,
         private PromptSanitizer $sanitizer,
         private SafetyPrompts $prompts,
+        private FallbackEngines $fallbacks,
     ) {}
 
     /**
      * @param  list<ImageReference>  $references
+     * @param  (callable(): array{prompt: string, references: list<ImageReference>})|null  $compose
+     *                                                                                               Recomposes prompt and references for the CURRENTLY configured
+     *                                                                                               engine (reference budgets differ per engine). When null, the
+     *                                                                                               given prompt and references are used for every engine.
      */
-    public function generate(string $prompt, string $size, array $references = [], string $label = 'image', ?PromptLogContext $log = null): GeneratedImage
+    public function generate(string $prompt, string $size, array $references = [], string $label = 'image', ?PromptLogContext $log = null, ?callable $compose = null, bool $engineFallback = true): GeneratedImage
     {
-        $rephrased = null;
-        $getRephrased = function () use (&$rephrased, $prompt): string {
-            return $rephrased ??= $this->rephraseForSafety($prompt);
-        };
+        $engines = $engineFallback ? [null, ...$this->fallbacks->chain()] : [null];
 
-        $attempts = [
-            ['desc' => 'original', 'getPrompt' => fn (): string => $prompt, 'refs' => $references],
-            ['desc' => 'scrubbed', 'getPrompt' => fn (): string => $this->sanitizer->sanitize($prompt), 'refs' => $references],
-            ['desc' => 'ai-rephrased', 'getPrompt' => $getRephrased, 'refs' => $references],
-            ['desc' => 'ai-rephrased, no photos', 'getPrompt' => $getRephrased, 'refs' => []],
-        ];
-
+        $attempt = 0;
         $lastException = null;
+        $sawContentRejection = false;
+        $rewrites = [];
+        $aiRewriteBudget = 1;
 
-        foreach ($attempts as $index => $attempt) {
-            try {
-                $effectivePrompt = ($attempt['getPrompt'])();
-                $journal = $this->journalAttempt($log, $index + 1, $attempt['desc'], $effectivePrompt);
-
-                $image = new GeneratedImage(
-                    bytes: $this->ai->generateImage($effectivePrompt, $size, $attempt['refs']),
-                    prompt: $effectivePrompt,
-                    attempt: $index + 1,
-                );
-
-                $this->markAccepted($journal);
-
-                return $image;
-            } catch (Throwable $exception) {
-                $lastException = $exception;
-
-                if ($this->isNonRetryable($exception)) {
-                    throw $exception;
-                }
-
-                $reason = mb_substr($exception->getMessage(), 0, 160);
-                Log::warning(sprintf('[ai] %s: attempt %d/%d (%s) failed: %s', $label, $index + 1, count($attempts), $attempt['desc'], $reason));
+        foreach ([1, 2] as $round) {
+            // Round 2 exists only for content flags: rewriting the prompt
+            // cannot fix an outage or a bad key.
+            if ($round === 2 && ! $sawContentRejection) {
+                break;
             }
+
+            foreach ($engines as $engine) {
+                $result = $this->withEngine($engine, function () use ($prompt, $size, $references, $label, $log, $compose, $round, $engine, &$attempt, &$lastException, &$sawContentRejection, &$rewrites, &$aiRewriteBudget): ?GeneratedImage {
+                    $composed = $compose !== null ? $compose() : ['prompt' => $prompt, 'references' => $references];
+                    $effectivePrompt = (string) $composed['prompt'];
+                    $refs = $composed['references'];
+
+                    if ($round === 2) {
+                        $effectivePrompt = $this->safeRewrite($effectivePrompt, $rewrites, $aiRewriteBudget);
+                    }
+
+                    $variant = $round === 1 ? 'original' : 'safe-rewrite';
+
+                    for ($try = 1; $try <= self::TRANSIENT_TRIES; $try++) {
+                        $attempt++;
+                        $journal = $this->journalAttempt($log, $attempt, $round, $variant, $effectivePrompt);
+
+                        try {
+                            $image = new GeneratedImage(
+                                bytes: $this->ai->generateImage($effectivePrompt, $size, $refs),
+                                prompt: $effectivePrompt,
+                                attempt: $attempt,
+                            );
+
+                            $this->markAccepted($journal);
+
+                            return $image;
+                        } catch (Throwable $exception) {
+                            $lastException = $exception;
+                            $this->recordFailure($journal, $exception);
+
+                            $reason = mb_substr($exception->getMessage(), 0, 160);
+                            Log::warning(sprintf('[ai] %s: round %d attempt %d (%s, %s) failed: %s', $label, $round, $attempt, $variant, $this->currentEngineLabel(), $reason));
+
+                            if ($this->isContentRejection($exception)) {
+                                $sawContentRejection = true;
+
+                                return null; // Next engine takes over; the prompt stays untouched.
+                            }
+
+                            if ($this->isNonRetryable($exception)) {
+                                if ($engine === null) {
+                                    throw $exception; // The active engine is misconfigured: nothing downstream can save this.
+                                }
+
+                                return null; // A dead fallback engine is simply skipped.
+                            }
+
+                            // Transient: same engine, same prompt, one more try.
+                        }
+                    }
+
+                    return null;
+                });
+
+                if ($result !== null) {
+                    return $result;
+                }
+            }
+        }
+
+        if ($sawContentRejection) {
+            throw new ImageFlaggedSensitiveException(
+                'Every engine refused this image on content grounds: '.mb_substr($lastException?->getMessage() ?? '', 0, 300),
+                previous: $lastException,
+            );
         }
 
         throw $lastException;
     }
 
     /**
+     * Run the callback with a fallback engine applied to the config (the
+     * same mechanism the dedicated cover engine uses), restoring the active
+     * engine afterwards. A null engine means the active one.
+     *
+     * @param  array{provider: string, model: string}|null  $engine
+     */
+    private function withEngine(?array $engine, callable $callback): ?GeneratedImage
+    {
+        if ($engine === null) {
+            return $callback();
+        }
+
+        $modelPath = "cubfable.ai.models.image.{$engine['provider']}";
+        $originalProvider = config('cubfable.ai.image_provider');
+        $originalModel = config($modelPath);
+
+        config()->set('cubfable.ai.image_provider', $engine['provider']);
+        config()->set($modelPath, $engine['model']);
+
+        try {
+            return $callback();
+        } finally {
+            config()->set('cubfable.ai.image_provider', $originalProvider);
+            config()->set($modelPath, $originalModel);
+        }
+    }
+
+    private function currentEngineLabel(): string
+    {
+        $provider = (string) config('cubfable.ai.image_provider');
+
+        return $provider.':'.(string) config("cubfable.ai.models.image.{$provider}");
+    }
+
+    /**
+     * The round-2 prompt for a composed round-1 prompt. At most one AI
+     * rewrite call per generate() run; further distinct prompts (engines
+     * whose composed prompt differs) fall back to the deterministic scrub.
+     *
+     * @param  array<string, string>  $cache
+     */
+    private function safeRewrite(string $prompt, array &$cache, int &$aiRewriteBudget): string
+    {
+        $key = md5($prompt);
+
+        if (isset($cache[$key])) {
+            return $cache[$key];
+        }
+
+        if ($aiRewriteBudget > 0) {
+            $aiRewriteBudget--;
+
+            return $cache[$key] = $this->rephraseForSafety($prompt);
+        }
+
+        return $cache[$key] = $this->sanitizer->sanitize($prompt);
+    }
+
+    /**
      * Journal one attempt to image_prompts. Never lets a bookkeeping failure
      * break generation.
      */
-    private function journalAttempt(?PromptLogContext $log, int $attempt, string $variant, string $prompt): ?ImagePrompt
+    private function journalAttempt(?PromptLogContext $log, int $attempt, int $round, string $variant, string $prompt): ?ImagePrompt
     {
         if ($log === null) {
             return null;
         }
+
+        $provider = (string) config('cubfable.ai.image_provider');
 
         try {
             return ImagePrompt::query()->create([
@@ -90,7 +213,10 @@ class SafeImageGenerator
                 'page_id' => $log->pageId,
                 'purpose' => $log->purpose,
                 'attempt' => $attempt,
+                'round' => $round,
                 'variant' => $variant,
+                'provider' => $provider,
+                'model' => (string) config("cubfable.ai.models.image.{$provider}"),
                 'prompt' => $prompt,
                 'accepted' => false,
             ]);
@@ -114,8 +240,34 @@ class SafeImageGenerator
         }
     }
 
+    private function recordFailure(?ImagePrompt $journal, Throwable $exception): void
+    {
+        if ($journal === null) {
+            return;
+        }
+
+        try {
+            $journal->update(['error' => mb_substr($exception->getMessage(), 0, 1000)]);
+        } catch (Throwable $bookkeeping) {
+            Log::warning("Failed to record an image prompt error: {$bookkeeping->getMessage()}");
+        }
+    }
+
     /**
-     * Config/auth/network failures won't be fixed by rephrasing, so fail fast on them.
+     * Whether the engine refused on content-safety grounds (as opposed to
+     * being down, throttled, or misconfigured).
+     */
+    private function isContentRejection(Throwable $exception): bool
+    {
+        if ($exception instanceof ImageContentRejectedException) {
+            return true;
+        }
+
+        return preg_match('/nsfw|sensitive|moderat|content[_ ]?policy|flagged|unsafe|safety/i', $exception->getMessage()) === 1;
+    }
+
+    /**
+     * Config/auth/network failures won't be fixed by retrying the same call.
      */
     private function isNonRetryable(Throwable $exception): bool
     {

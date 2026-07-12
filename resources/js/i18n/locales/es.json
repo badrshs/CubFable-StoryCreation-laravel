@@ -431,6 +431,7 @@
   "templates.noMatchesDescription": "Prueba otra palabra, edad o mundo: cada cuento espera en algún lugar.",
   "templates.clearFilters": "Mostrar todos los cuentos",
   "admin.nav.logs": "Registros",
+  "admin.nav.moderation": "Cola de revisión",
   "crop.title": "Encuadra a tu personaje",
   "crop.hint": "Mueve y acerca hasta que la persona llene el marco: esta será la imagen de referencia del artista.",
   "crop.zoom": "Zoom",

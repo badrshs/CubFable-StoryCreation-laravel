@@ -18,9 +18,13 @@ use Illuminate\Support\Carbon;
  * @property int|null $page_id
  * @property string $purpose
  * @property int $attempt
+ * @property int $round
  * @property string $variant
+ * @property string|null $provider
+ * @property string|null $model
  * @property string $prompt
  * @property bool $accepted
+ * @property string|null $error
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -29,9 +33,13 @@ use Illuminate\Support\Carbon;
     'page_id',
     'purpose',
     'attempt',
+    'round',
     'variant',
+    'provider',
+    'model',
     'prompt',
     'accepted',
+    'error',
 ])]
 class ImagePrompt extends Model
 {

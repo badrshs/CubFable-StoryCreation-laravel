@@ -431,6 +431,7 @@
   "templates.noMatchesDescription": "جرّب كلمة أو عمرًا أو عالمًا آخر - كل قصة تنتظر في مكان ما.",
   "templates.clearFilters": "اعرض كل القصص",
   "admin.nav.logs": "السجلات",
+  "admin.nav.moderation": "قائمة المراجعة",
   "crop.title": "حدّد إطار شخصيتك",
   "crop.hint": "حرّك وقرّب حتى يملأ الشخص الإطار - هذه هي الصورة التي سيرسم منها الفنان.",
   "crop.zoom": "تكبير",

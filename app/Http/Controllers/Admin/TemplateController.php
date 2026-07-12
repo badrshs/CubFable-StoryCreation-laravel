@@ -6,9 +6,16 @@ use App\Enums\ArtStyle;
 use App\Enums\FontChoice;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\TemplateRequest;
+use App\Jobs\EngineOverride;
 use App\Models\Template;
+use App\Services\AI\ImageSizePolicy;
+use App\Services\AI\SafeImageGenerator;
+use App\Services\AI\UsageCollector;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -38,6 +45,11 @@ class TemplateController extends Controller
                 'pageCount' => $template->page_count,
                 'booksCount' => (int) $template->getAttribute('books_count'),
                 'coverImageUrl' => $template->cover_image_url,
+                // A data: URL is the seeded SVG placeholder, not real art.
+                'needsCover' => $template->cover_image_url === null
+                    || $template->cover_image_url === ''
+                    || str_starts_with((string) $template->cover_image_url, 'data:'),
+                'hasImagePrompt' => trim((string) $template->image_prompt) !== '',
             ]),
             'filters' => ['search' => $search],
         ]);
@@ -88,6 +100,67 @@ class TemplateController extends Controller
         Template::query()->findOrFail($id)->update($this->payload($request));
 
         return back();
+    }
+
+    /**
+     * Generate the template's cover art from its stored image prompt (PAID -
+     * one real image call, synchronous). The file lands at
+     * public/images/templates/{slug}.jpg like the hand-made covers, and an
+     * optional engine override applies to this call only.
+     */
+    public function generateCover(Request $request, int $id, SafeImageGenerator $images, UsageCollector $usage, ImageSizePolicy $sizes): RedirectResponse
+    {
+        $template = Template::query()->findOrFail($id);
+
+        $validated = $request->validate([
+            'provider' => ['nullable', 'in:openai,gemini,openrouter,flow,grok,piapi,replicate'],
+            'model' => ['nullable', 'string', 'max:200'],
+        ]);
+
+        $prompt = trim((string) $template->image_prompt);
+
+        if ($prompt === '') {
+            throw ValidationException::withMessages([
+                'template' => 'This template has no cover image prompt to generate from.',
+            ]);
+        }
+
+        EngineOverride::apply($validated['provider'] ?? null, $validated['model'] ?? null);
+        Log::info("Generating template cover for [{$template->title}].", ['template_id' => $template->id]);
+
+        try {
+            $image = $images->generate($prompt, $sizes->bookSize(), [], "template {$template->id} cover");
+        } finally {
+            $usage->flush(null);
+        }
+
+        $relative = 'images/templates/'.Str::slug($template->title).'.jpg';
+        File::ensureDirectoryExists(public_path('images/templates'));
+        File::put(public_path($relative), $this->toJpeg($image->bytes));
+
+        $template->update(['cover_image_url' => '/'.$relative]);
+
+        return back();
+    }
+
+    /**
+     * Transcode generated PNG bytes to JPEG (the format every template cover
+     * ships as); unreadable bytes pass through untouched.
+     */
+    private function toJpeg(string $bytes): string
+    {
+        $source = @imagecreatefromstring($bytes);
+
+        if ($source === false) {
+            return $bytes;
+        }
+
+        ob_start();
+        imagejpeg($source, null, 88);
+        $jpeg = (string) ob_get_clean();
+        imagedestroy($source);
+
+        return $jpeg !== '' ? $jpeg : $bytes;
     }
 
     /**

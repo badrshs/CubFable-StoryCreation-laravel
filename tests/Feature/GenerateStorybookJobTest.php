@@ -145,6 +145,109 @@ class GenerateStorybookJobTest extends TestCase
         $this->assertSame(4, Http::recorded(fn (Request $request): bool => str_contains($request->url(), 'images/edits'))->count());
     }
 
+    public function test_a_sensitive_flagged_page_is_flagged_for_review_and_the_book_completes(): void
+    {
+        $book = $this->pendingBookWithCast();
+
+        Http::fake([
+            'api.openai.com/v1/chat/completions' => Http::response($this->storyChatResponse()),
+            'api.openai.com/v1/images/generations' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+            'api.openai.com/v1/images/edits' => Http::sequence()
+                ->push(['data' => [['b64_json' => self::PNG_BASE64]]])
+                ->whenEmpty(Http::response(['error' => ['message' => 'content policy violation']], 400)),
+        ]);
+
+        (new GenerateStorybookJob($book->id))->handle(app(StoryGenerator::class));
+
+        $book->refresh();
+        $this->assertSame(BookStatus::Complete, $book->status);
+        $this->assertNotNull($book->cover_image_path);
+        $this->assertNull($book->cover_flagged_at);
+
+        foreach ($book->pages()->get() as $page) {
+            $this->assertSame(PageStatus::Failed, $page->status);
+            $this->assertNotNull($page->flagged_at);
+            $this->assertNull($page->image_path);
+        }
+    }
+
+    public function test_a_flagged_cover_is_parked_for_review_without_failing_the_book(): void
+    {
+        $book = $this->pendingBookWithCast();
+
+        Http::fake([
+            'api.openai.com/v1/chat/completions' => Http::response($this->storyChatResponse()),
+            'api.openai.com/v1/images/generations' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+            'api.openai.com/v1/images/edits' => Http::sequence()
+                ->push(['error' => ['message' => 'content policy violation']], 400)
+                ->push(['error' => ['message' => 'content policy violation']], 400)
+                ->whenEmpty(Http::response(['data' => [['b64_json' => self::PNG_BASE64]]])),
+        ]);
+
+        (new GenerateStorybookJob($book->id))->handle(app(StoryGenerator::class));
+
+        $book->refresh();
+        $this->assertSame(BookStatus::Complete, $book->status);
+        $this->assertNull($book->cover_image_path);
+        $this->assertNotNull($book->cover_flagged_at);
+
+        foreach ($book->pages()->get() as $page) {
+            $this->assertSame(PageStatus::Complete, $page->status);
+            $this->assertNull($page->flagged_at);
+        }
+    }
+
+    public function test_a_failed_regeneration_never_downgrades_a_page_that_has_an_image(): void
+    {
+        $book = $this->pendingBookWithCast();
+        $book->update(['status' => BookStatus::Complete]);
+        Storage::disk('public')->put('books/1/pages/1-old.png', base64_decode(self::PNG_BASE64));
+        $page = Page::factory()->complete()->for($book)->create([
+            'page_number' => 1,
+            'image_path' => 'books/1/pages/1-old.png',
+            'scene' => 'Mia waves near the old clock tower.',
+        ]);
+
+        Http::fake([
+            'api.openai.com/v1/chat/completions' => Http::response($this->storyChatResponse()),
+            'api.openai.com/v1/images/generations' => Http::response(['error' => ['message' => 'content policy violation']], 400),
+            'api.openai.com/v1/images/edits' => Http::response(['error' => ['message' => 'content policy violation']], 400),
+        ]);
+
+        app(StoryGenerator::class)->regeneratePageIllustration($page, $book);
+
+        $page->refresh();
+        // The good image and its Complete status survive; the flag routes it
+        // to the review queue instead.
+        $this->assertSame(PageStatus::Complete, $page->status);
+        $this->assertSame('books/1/pages/1-old.png', $page->image_path);
+        $this->assertNotNull($page->flagged_at);
+    }
+
+    public function test_the_story_prompt_carries_the_template_premise(): void
+    {
+        $book = $this->pendingBookWithCast();
+        Template::query()->whereKey($book->template_id)->update([
+            'title' => "Teddy's Turn to Share",
+            'description' => 'Teddy learns that sharing his favorite bear makes playtime twice as fun.',
+        ]);
+
+        Http::fake([
+            'api.openai.com/v1/chat/completions' => Http::response($this->storyChatResponse()),
+            'api.openai.com/v1/images/generations' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+            'api.openai.com/v1/images/edits' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+        ]);
+
+        (new GenerateStorybookJob($book->id))->handle(app(StoryGenerator::class));
+
+        $chatRequests = Http::recorded(fn (Request $request): bool => str_contains($request->url(), 'chat/completions'));
+        $this->assertCount(1, $chatRequests);
+
+        $prompt = (string) data_get($chatRequests->first()[0]->data(), 'messages.0.content');
+        $this->assertStringContainsString("Teddy's Turn to Share", $prompt);
+        $this->assertStringContainsString('sharing his favorite bear makes playtime twice as fun', $prompt);
+    }
+
     public function test_image_failures_flip_pages_to_failed_but_the_book_completes(): void
     {
         $book = $this->pendingBookWithCast();

@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AiUsage;
 use App\Models\Book;
 use App\Models\Order;
+use App\Models\Page;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -107,6 +108,8 @@ class DashboardController extends Controller
                 'booksTotal' => (int) $byStatus->sum(),
                 'avgCostPerBook' => $completedBooks > 0 ? round($aiSpend / $completedBooks, 2) : 0.0,
                 'failedJobs' => (int) DB::table('failed_jobs')->count(),
+                'flaggedForReview' => Page::query()->whereNotNull('flagged_at')->count()
+                    + Book::query()->whereNotNull('cover_flagged_at')->count(),
             ],
             'byStatus' => $byStatus->all(),
             'trend' => $trend,

@@ -5,6 +5,7 @@ namespace App\Services\Pdf;
 use App\Models\Book;
 use App\Models\Page;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -121,7 +122,8 @@ class StorybookPdfBuilder
 
     /**
      * Story languages whose script the Latin fonts cannot render, mapped to a
-     * capable font: Amiri (bundled TTF) for Arabic script, and TCPDF's own
+     * capable font: professional Arabic faces (see ARABIC_STORY_FONTS) for
+     * Arabic script with Amiri as the safety net, and TCPDF's own
      * broad-coverage families elsewhere. Arabic-script languages also flip the
      * story text to RTL.
      *
@@ -134,6 +136,52 @@ class StorybookPdfBuilder
         'hi' => ['font' => null, 'family' => 'freeserif', 'rtl' => false],
         'zh' => ['font' => null, 'family' => 'cid0cs', 'rtl' => false],
     ];
+
+    /**
+     * The book's font choice carried into Arabic script. TCPDF renders
+     * Arabic through the legacy Unicode presentation-forms block, and only a
+     * handful of families ship those glyphs (a scan of 26 Google families
+     * found exactly four) - every face here is verified to actually render,
+     * not just embed.
+     *
+     * @var array<string, string>
+     */
+    private const array ARABIC_STORY_FONTS = [
+        'classic' => 'NotoNaskhArabic-Regular.ttf',
+        'playful' => 'Vazirmatn-Regular.ttf',
+        'handwritten' => 'Amiri-Regular.ttf',
+        'bold' => 'IBMPlexSansArabic-Bold.ttf',
+    ];
+
+    /**
+     * The bundled faces an admin can name in the per-language font settings
+     * (pdf_font_default / pdf_font_<lang>), keyed by their slug. Any other
+     * non-empty value is treated as a Google Fonts family name and
+     * downloaded at build time.
+     *
+     * @var array<string, string>
+     */
+    private const array BUNDLED_FACES = [
+        'noto-naskh' => 'NotoNaskhArabic-Regular.ttf',
+        'amiri' => 'Amiri-Regular.ttf',
+        'vazirmatn' => 'Vazirmatn-Regular.ttf',
+        'plex-arabic' => 'IBMPlexSansArabic-Regular.ttf',
+        'plex-arabic-bold' => 'IBMPlexSansArabic-Bold.ttf',
+        'baloo' => 'Baloo2-SemiBold.ttf',
+        'cormorant' => 'Cormorant-Medium.ttf',
+        'patrick-hand' => 'PatrickHand-Regular.ttf',
+        'luckiest-guy' => 'LuckiestGuy-Regular.ttf',
+    ];
+
+    /**
+     * The bundled face slugs, for the settings UI hint.
+     *
+     * @return list<string>
+     */
+    public static function bundledFaceKeys(): array
+    {
+        return array_keys(self::BUNDLED_FACES);
+    }
 
     /** @var array<string, array{family: string, style: string, file: string}> core font stand-ins used when a TTF conversion fails */
     private const array CORE_FONT_FALLBACKS = [
@@ -282,10 +330,45 @@ class StorybookPdfBuilder
         $choice = self::STORY_FONT_CHOICES[$book->font] ?? self::STORY_FONT_CHOICES['classic'];
         $override = self::SCRIPT_OVERRIDES[$book->language] ?? null;
 
-        if ($override !== null) {
-            $script = $override['font'] !== null
-                ? ($this->convertTtf($override['font'], $cacheDir) ?? self::CORE_FONT_FALLBACKS['story'])
-                : ['family' => (string) $override['family'], 'style' => '', 'file' => ''];
+        // An admin-configured face wins: the language's own font setting
+        // first, then the default-for-all-languages one; each names a
+        // bundled face or a Google Font to download. Unset (or a failed
+        // download/conversion) falls through to the automatic behavior.
+        $configured = $this->configuredStoryTtf($book);
+        $configuredFace = $configured !== null ? $this->convertTtf($configured, $cacheDir) : null;
+
+        // TCPDF renders Arabic through the legacy presentation-forms block;
+        // a font without those glyphs embeds fine but prints boxes. Reject
+        // it here so a wrong pick degrades to a working face, never to tofu.
+        if ($configuredFace !== null && ($override['rtl'] ?? false) && ! $this->coversArabicPresentationForms($configuredFace)) {
+            Log::warning('Storybook PDF: the configured face has no Arabic presentation forms (it would render boxes); using the automatic Arabic face instead.', ['face' => $configuredFace['family']]);
+            $configuredFace = null;
+        }
+
+        if ($configuredFace !== null) {
+            $fonts['story'] = $configuredFace;
+            $fonts['display'] = $configuredFace;
+        } elseif ($override !== null) {
+            // Automatic: Arabic script picks the professional face matching
+            // the book's font choice, with Amiri as the safety net; other
+            // scripts use a capable TCPDF family.
+            $ttf = $override['font'];
+
+            if ($ttf !== null && $override['rtl'] && isset(self::ARABIC_STORY_FONTS[$book->font])) {
+                $ttf = self::ARABIC_STORY_FONTS[$book->font];
+            }
+
+            if ($ttf !== null) {
+                $script = $this->convertTtf($ttf, $cacheDir);
+
+                if ($script === null && $ttf !== 'Amiri-Regular.ttf') {
+                    $script = $this->convertTtf('Amiri-Regular.ttf', $cacheDir);
+                }
+
+                $script ??= self::CORE_FONT_FALLBACKS['story'];
+            } else {
+                $script = ['family' => (string) $override['family'], 'style' => '', 'file' => ''];
+            }
 
             $fonts['story'] = $script;
             $fonts['display'] = $script;
@@ -298,12 +381,126 @@ class StorybookPdfBuilder
     }
 
     /**
+     * The story TTF the admin's font settings ask for on this book: the
+     * language's own setting first, then the default for all languages.
+     * Each value is a bundled face slug or a Google Fonts family name.
+     * Returns a bundled filename, an absolute path to a downloaded font, or
+     * null when nothing is configured ('auto'/empty) so the automatic
+     * per-script behavior applies.
+     */
+    private function configuredStoryTtf(Book $book): ?string
+    {
+        $spec = trim((string) config("cubfable.pdf.fonts.{$book->language}", ''));
+
+        if ($spec === '') {
+            $spec = trim((string) config('cubfable.pdf.fonts.default', ''));
+        }
+
+        if ($spec === '' || strcasecmp($spec, 'auto') === 0) {
+            return null;
+        }
+
+        $bundled = self::BUNDLED_FACES[Str::slug($spec)] ?? null;
+
+        return $bundled ?? $this->googleFontTtf($spec, $this->googleFontSubset($book->language));
+    }
+
+    /**
+     * The Google Fonts subset the story language needs. Without it the CSS
+     * API serves the Latin-only file and every non-Latin glyph is missing
+     * from the downloaded font.
+     */
+    private function googleFontSubset(string $language): string
+    {
+        return match ($language) {
+            'ar', 'ur' => 'arabic,latin',
+            'ru' => 'cyrillic,latin',
+            'hi' => 'devanagari,latin',
+            'zh' => 'chinese-simplified,latin',
+            default => 'latin,latin-ext',
+        };
+    }
+
+    /**
+     * Download a Google Font family's regular TTF by name (cached under
+     * storage, per script subset) and return its absolute path, or null when
+     * the family cannot be fetched. The v1 CSS API serves plain TrueType
+     * urls to a default user agent, which is exactly what TCPDF can convert.
+     */
+    private function googleFontTtf(string $family, string $subset): ?string
+    {
+        if ($family === '') {
+            return null;
+        }
+
+        $path = storage_path('app/pdf-fonts/google/'.Str::slug($family.' '.$subset).'.ttf');
+
+        if (File::exists($path)) {
+            return $path;
+        }
+
+        try {
+            $css = Http::timeout(20)->get('https://fonts.googleapis.com/css', ['family' => $family, 'subset' => $subset])->throw()->body();
+
+            if (preg_match('/url\((https:[^)]+\.ttf)\)/', $css, $matches) !== 1) {
+                Log::warning("Storybook PDF: Google Fonts returned no TTF url for [{$family}].");
+
+                return null;
+            }
+
+            $bytes = Http::timeout(30)->get($matches[1])->throw()->body();
+
+            File::ensureDirectoryExists(dirname($path));
+            File::put($path, $bytes);
+
+            return $path;
+        } catch (Throwable $exception) {
+            Log::warning("Storybook PDF: downloading Google Font [{$family}] failed; using the automatic Arabic face.", ['exception' => $exception->getMessage()]);
+
+            return null;
+        }
+    }
+
+    /**
+     * TCPDF fuses a shadda followed by a vowel mark into one of the
+     * U+FC5E-FC63 presentation ligatures, and several fonts give those
+     * glyphs a SPACING advance - which rips a visible gap into the middle
+     * of the word right where the shadda sits. Putting the vowel first
+     * (canonically identical text) keeps the two marks as separate
+     * zero-width combining glyphs that stack cleanly in every font.
+     */
+    private function normalizeArabicMarks(string $text): string
+    {
+        return (string) preg_replace('/\x{0651}([\x{064B}-\x{0650}\x{0670}])/u', '$1'."\u{0651}", $text);
+    }
+
+    /**
+     * Whether a converted face carries the Arabic presentation-forms glyphs
+     * TCPDF's shaper maps to (checked on ALEF isolated, LAM initial and MEEM
+     * medial in the definition's width table).
+     *
+     * @param  array{family: string, style: string, file: string}  $face
+     */
+    private function coversArabicPresentationForms(array $face): bool
+    {
+        if ($face['file'] === '' || ! File::exists($face['file'])) {
+            return false;
+        }
+
+        $cw = null; // populated by the TCPDF font definition file
+        include $face['file'];
+
+        return is_array($cw) && isset($cw[0xFE8D], $cw[0xFEDF], $cw[0xFEE4]);
+    }
+
+    /**
      * @return array{family: string, style: string, file: string}|null
      */
     private function convertTtf(string $ttf, string $cacheDir): ?array
     {
         try {
-            $family = TCPDF_FONTS::addTTFfont(resource_path('fonts/'.$ttf), 'TrueTypeUnicode', '', 96, $cacheDir);
+            $ttfPath = File::exists($ttf) ? $ttf : resource_path('fonts/'.$ttf);
+            $family = TCPDF_FONTS::addTTFfont($ttfPath, 'TrueTypeUnicode', '', 96, $cacheDir);
         } catch (Throwable $exception) {
             Log::warning("Storybook PDF: converting font [{$ttf}] failed, falling back to a core font.", ['exception' => $exception->getMessage()]);
 
@@ -877,7 +1074,7 @@ class StorybookPdfBuilder
         }
 
         // Text zone between the band and the folio, sized to fit.
-        $text = trim((string) $page->text);
+        $text = $this->normalizeArabicMarks(trim((string) $page->text));
         $maxTextW = $this->trimW - 2 * self::MARGIN - 20;
         $zoneTop = $bandBottom - 34;
         $zoneBottom = $this->bleed + 58;
@@ -940,7 +1137,7 @@ class StorybookPdfBuilder
     {
         $this->drawCoverFit($image, 0, 0, $this->pageW, $this->pageH);
 
-        $text = trim((string) $page->text);
+        $text = $this->normalizeArabicMarks(trim((string) $page->text));
 
         if ($text !== '') {
             $padX = 28.0;
@@ -971,8 +1168,14 @@ class StorybookPdfBuilder
 
             $panelW = min($this->trimW - 2 * self::MARGIN, max(200.0, $maxLineW + 2 * $padX));
 
+            // Vertical centering built from the glyph run itself: ascent
+            // covers Arabic diacritics above the baseline, descent the tails
+            // below, so the gap over the first line equals the gap under the
+            // last one.
             $leading = $size * 1.5;
-            $textH = count($lines) * $leading;
+            $ascent = $size * 1.05;
+            $descent = $size * 0.35;
+            $textH = (count($lines) - 1) * $leading + $ascent + $descent;
             $panelH = $textH + 2 * $padY;
             $panelBottom = $this->bleed + 56;
             $panelX = $this->cx - $panelW / 2;
@@ -996,7 +1199,7 @@ class StorybookPdfBuilder
                 $this->pdf->setRTL(true);
             }
 
-            $baseline = $panelBottom + $panelH - $padY - $size;
+            $baseline = $panelBottom + $panelH - $padY - $ascent;
 
             foreach ($lines as $line) {
                 if ($this->rtl) {
@@ -1039,7 +1242,11 @@ class StorybookPdfBuilder
         $this->useFont('story', $size);
         $this->pdf->SetTextColor($color[0], $color[1], $color[2]);
         $this->pdf->SetXY($this->bleed, $this->flipY($baseline));
-        $this->pdf->Cell($this->trimW, 0, $text, 0, 0, 'C');
+        // calign 'L' anchors the cell at the font BASELINE, exactly like the
+        // LTR textAt() primitive; the default 'T' treats y as the top of a
+        // line-height cell, which sinks the glyphs almost a full line lower
+        // than every baseline computed by the layout math.
+        $this->pdf->Cell($this->trimW, 0, $text, 0, 0, 'C', false, '', 0, false, 'L');
     }
 
     private function drawEndPage(Book $book): void

@@ -5,6 +5,7 @@ namespace App\Services\Prompts;
 use App\Enums\StoryLanguage;
 use App\Models\Book;
 use App\Models\Character;
+use App\Models\Template;
 use Illuminate\Database\Eloquent\Collection;
 
 /**
@@ -21,9 +22,17 @@ class StoryPromptComposer
      *
      * @param  Collection<int, Character>  $cast
      */
-    public function authorPrompt(Book $book, int $pageCount, Collection $cast, Character $main): string
+    public function authorPrompt(Book $book, int $pageCount, Collection $cast, Character $main, ?Template $template = null): string
     {
         $langName = $this->languageName($book);
+
+        // The template's curated premise IS the plot the buyer picked; the
+        // theme/subject/lesson keywords below only flavor it.
+        $premise = '';
+
+        if ($template !== null && trim($template->description) !== '') {
+            $premise = "- Premise (this is the plot - tell THIS story, personalized for {$main->name}): \"{$template->title}\" - {$template->description}\n";
+        }
 
         $others = $cast
             ->reject(fn (Character $character): bool => $character->id === $main->id)
@@ -39,7 +48,7 @@ class StoryPromptComposer
 You are an award-winning children's picture-book author AND the book's art director. Create a complete book plan for a personalized storybook starring {$main->name} (age {$book->age_range}).
 
 Story details:
-- Setting / world: {$book->theme}
+{$premise}- Setting / world: {$book->theme}
 - What the story is about (the subject - make this central to the plot): {$book->subject}
 - Life lesson: {$book->life_lesson}
 - Art style: {$book->art_style}

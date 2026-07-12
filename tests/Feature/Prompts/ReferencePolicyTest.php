@@ -53,6 +53,27 @@ class ReferencePolicyTest extends TestCase
         }
     }
 
+    public function test_openai_carries_a_multi_image_array_capped_at_six(): void
+    {
+        config()->set('cubfable.ai.image_provider', 'openai');
+
+        $this->assertSame(6, $this->policy->budget());
+
+        config()->set('cubfable.ai.max_image_references', 2);
+        $this->assertSame(2, $this->policy->budget());
+    }
+
+    public function test_gemini_carries_references_but_imagen_models_take_none(): void
+    {
+        config()->set('cubfable.ai.image_provider', 'gemini');
+
+        config()->set('cubfable.ai.models.image.gemini', 'gemini-2.5-flash-image');
+        $this->assertSame(6, $this->policy->budget());
+
+        config()->set('cubfable.ai.models.image.gemini', 'imagen-4.0-generate-001');
+        $this->assertSame(0, $this->policy->budget(), 'Imagen predict is prompt-only: identity must switch to text');
+    }
+
     public function test_unknown_slugs_fall_back_to_the_name_heuristic(): void
     {
         config()->set('cubfable.ai.models.image.replicate', 'someone/seedream-fork');

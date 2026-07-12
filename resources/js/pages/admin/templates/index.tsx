@@ -1,5 +1,5 @@
 import { Head, Link, router } from '@inertiajs/react';
-import { Plus, Search } from 'lucide-react';
+import { Loader2, Plus, Search, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,8 @@ type TemplateRow = {
     pageCount: number;
     booksCount: number;
     coverImageUrl: string | null;
+    needsCover: boolean;
+    hasImagePrompt: boolean;
 };
 
 type Props = {
@@ -27,6 +29,20 @@ type Props = {
 
 export default function AdminTemplates({ templates, filters }: Props) {
     const [search, setSearch] = useState(filters.search);
+    // One cover generates at a time: the call is synchronous and paid.
+    const [generatingId, setGeneratingId] = useState<number | null>(null);
+
+    const generateCover = (template: TemplateRow) => {
+        router.post(
+            `/admin/templates/${template.id}/generate-cover`,
+            {},
+            {
+                preserveScroll: true,
+                onStart: () => setGeneratingId(template.id),
+                onFinish: () => setGeneratingId(null),
+            },
+        );
+    };
 
     return (
         <>
@@ -79,6 +95,7 @@ export default function AdminTemplates({ templates, filters }: Props) {
                                 <th className="p-3 text-start">Ages</th>
                                 <th className="p-3 text-start">Pages</th>
                                 <th className="p-3 text-start">Books</th>
+                                <th className="p-3 text-start">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -118,12 +135,38 @@ export default function AdminTemplates({ templates, filters }: Props) {
                                     <td className="p-3">
                                         {template.booksCount}
                                     </td>
+                                    <td className="p-2">
+                                        {template.needsCover &&
+                                            template.hasImagePrompt && (
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    disabled={
+                                                        generatingId !== null
+                                                    }
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        generateCover(
+                                                            template,
+                                                        );
+                                                    }}
+                                                >
+                                                    {generatingId ===
+                                                    template.id ? (
+                                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                                    ) : (
+                                                        <Sparkles className="h-4 w-4" />
+                                                    )}
+                                                    Generate cover
+                                                </Button>
+                                            )}
+                                    </td>
                                 </tr>
                             ))}
                             {templates.data.length === 0 && (
                                 <tr>
                                     <td
-                                        colSpan={6}
+                                        colSpan={7}
                                         className="p-8 text-center text-muted-foreground"
                                     >
                                         No templates match.
