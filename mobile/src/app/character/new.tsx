@@ -1,21 +1,19 @@
-import { StyleSheet, View } from 'react-native';
+import { router } from 'expo-router';
 
-import { Text } from '@/components/ui/text';
-import { colors } from '@/theme';
+import { CharacterForm } from '@/components/wizard/character-form';
+import { useCreateCharacter } from '@/lib/api/mutations';
 
-export default function PlaceholderScreen() {
+export default function NewCharacterScreen() {
+  const createCharacter = useCreateCharacter();
+
   return (
-    <View style={styles.center}>
-      <Text variant="caption">Coming in a later phase.</Text>
-    </View>
+    <CharacterForm
+      title="New character"
+      submitLabel="Save character"
+      onSubmit={async (input) => {
+        await createCharacter.mutateAsync(input);
+        router.back();
+      }}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  center: {
-    flex: 1,
-    backgroundColor: colors.bg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
