@@ -29,6 +29,18 @@ class TemplateApiTest extends TestCase
             ]);
     }
 
+    public function test_relative_cover_paths_are_absolutized_for_mobile_clients()
+    {
+        Template::factory()->create(['cover_image_url' => '/images/templates/example.jpg']);
+        Template::factory()->create(['cover_image_url' => 'https://cdn.example.com/kept.jpg']);
+
+        $response = $this->getJson(route('api.v1.templates.index'));
+
+        $response->assertOk()
+            ->assertJsonPath('data.0.coverImageUrl', url('/images/templates/example.jpg'))
+            ->assertJsonPath('data.1.coverImageUrl', 'https://cdn.example.com/kept.jpg');
+    }
+
     public function test_templates_include_a_sorted_unique_theme_facet()
     {
         Template::factory()->create(['theme' => 'space']);
