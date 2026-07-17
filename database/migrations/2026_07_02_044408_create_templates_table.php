@@ -24,7 +24,7 @@ return new class extends Migration
             $table->json('art_styles');
             $table->json('subjects');
             $table->json('fonts');
-            $table->text('image_prompt')->default('');
+            $table->text('image_prompt');
             $table->timestamps();
         });
     }

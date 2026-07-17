@@ -26,8 +26,18 @@ return new class extends Migration
 
         // At most ONE pending order per book, so concurrent checkouts cannot
         // mint duplicate PaymentIntents. Laravel's Blueprint has no fluent
-        // partial index; this raw statement works on SQLite and Postgres.
-        DB::statement("CREATE UNIQUE INDEX orders_one_pending_per_book ON orders (book_id) WHERE status = 'pending'");
+        // partial index, so we express it per driver. SQLite and Postgres
+        // support real partial indexes; MySQL has no partial index, so we use
+        // a functional unique index over a CASE expression that yields the
+        // book_id only for pending rows and NULL otherwise (MySQL treats NULLs
+        // as distinct in a unique index, so non-pending rows never collide).
+        $driver = Schema::getConnection()->getDriverName();
+
+        if ($driver === 'mysql' || $driver === 'mariadb') {
+            DB::statement("CREATE UNIQUE INDEX orders_one_pending_per_book ON orders ((CASE WHEN status = 'pending' THEN book_id END))");
+        } else {
+            DB::statement("CREATE UNIQUE INDEX orders_one_pending_per_book ON orders (book_id) WHERE status = 'pending'");
+        }
     }
 
     /**
@@ -35,7 +45,15 @@ return new class extends Migration
      */
     public function down(): void
     {
-        DB::statement('DROP INDEX IF EXISTS orders_one_pending_per_book');
+        $driver = Schema::getConnection()->getDriverName();
+
+        if ($driver === 'mysql' || $driver === 'mariadb') {
+            if (Schema::hasTable('orders')) {
+                DB::statement('DROP INDEX orders_one_pending_per_book ON orders');
+            }
+        } else {
+            DB::statement('DROP INDEX IF EXISTS orders_one_pending_per_book');
+        }
 
         Schema::dropIfExists('orders');
     }
