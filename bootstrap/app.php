@@ -16,6 +16,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Behind Coolify's Traefik proxy (and Cloudflare), which terminate TLS and
+        // forward plain HTTP to the container. Trust the forwarded headers so Laravel
+        // detects HTTPS and generates https:// asset URLs instead of mixed content.
+        $middleware->trustProxies(at: '*');
+
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
         $middleware->preventRequestForgery(except: ['webhooks/stripe']);
