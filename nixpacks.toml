@@ -1,0 +1,92 @@
+[phases.setup]
+nixPkgs = ["...", "python311Packages.supervisor"]
+
+[phases.build]
+cmds = [
+    "mkdir -p /etc/supervisor/conf.d",
+    "cp /assets/worker-*.conf /etc/supervisor/conf.d/",
+    "cp /assets/supervisord.conf /etc/supervisord.conf",
+    "chmod +x /assets/start.sh",
+    "...",
+]
+
+[start]
+cmd = "/assets/start.sh"
+
+[staticAssets]
+"start.sh" = '''
+#!/bin/bash
+set -e
+php /app/artisan migrate --force
+php /app/artisan storage:link --force
+node /assets/scripts/prestart.mjs /assets/nginx.template.conf /nginx.conf
+exec supervisord -c /etc/supervisord.conf
+'''
+
+"supervisord.conf" = '''
+[unix_http_server]
+file=/tmp/supervisor.sock
+chmod=0700
+
+[supervisord]
+nodaemon=true
+logfile=/app/storage/logs/supervisord.log
+logfile_maxbytes=10MB
+pidfile=/tmp/supervisord.pid
+
+[rpcinterface:supervisor]
+supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
+
+[supervisorctl]
+serverurl=unix:///tmp/supervisor.sock
+
+[include]
+files = /etc/supervisor/conf.d/*.conf
+'''
+
+"php-fpm-custom.conf" = '''
+[global]
+error_log = /proc/1/fd/2
+
+[www]
+listen = 127.0.0.1:9000
+user = nobody
+pm = dynamic
+pm.max_children = 50
+pm.min_spare_servers = 4
+pm.max_spare_servers = 32
+pm.start_servers = 18
+clear_env = no
+catch_workers_output = yes
+decorate_workers_output = no
+'''
+
+"worker-web.conf" = '''
+[program:php-fpm]
+command=php-fpm -y /assets/php-fpm-custom.conf -F
+autostart=true
+autorestart=true
+priority=5
+stderr_logfile=/app/storage/logs/fpm.err.log
+stdout_logfile=/app/storage/logs/fpm.out.log
+
+[program:nginx]
+command=nginx -c /nginx.conf
+autostart=true
+autorestart=true
+priority=10
+stderr_logfile=/app/storage/logs/nginx.err.log
+stdout_logfile=/app/storage/logs/nginx.out.log
+'''
+
+"worker-queue.conf" = '''
+[program:queue]
+command=php /app/artisan queue:work --queue=default,books --sleep=3 --tries=1 --timeout=3600 --max-time=3600
+directory=/app
+autostart=true
+autorestart=true
+numprocs=1
+priority=20
+stderr_logfile=/app/storage/logs/queue.err.log
+stdout_logfile=/app/storage/logs/queue.out.log
+'''
