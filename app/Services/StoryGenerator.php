@@ -25,11 +25,11 @@ use App\Services\Prompts\ImagePromptComposer;
 use App\Services\Prompts\PromptText;
 use App\Services\Prompts\ReferencePolicy;
 use App\Services\Prompts\StoryPromptComposer;
+use App\Support\MediaDisk;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
@@ -552,7 +552,7 @@ class StoryGenerator
     {
         $path = $book->hero_sheet_path;
 
-        if ($path === null || $path === '' || ! Storage::disk('public')->exists($path)) {
+        if ($path === null || $path === '' || ! MediaDisk::public()->exists($path)) {
             return null;
         }
 

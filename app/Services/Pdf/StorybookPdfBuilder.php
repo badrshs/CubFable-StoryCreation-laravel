@@ -4,10 +4,10 @@ namespace App\Services\Pdf;
 
 use App\Models\Book;
 use App\Models\Page;
+use App\Support\MediaDisk;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use TCPDF;
 use TCPDF_FONTS;
@@ -808,24 +808,44 @@ class StorybookPdfBuilder
     // ---------------------------------------------------------------- images
 
     /**
-     * Locate an illustration on the public disk and measure it.
+     * Download an illustration from its media disk to a local temp file and
+     * measure it. The media disk may be remote (R2), which has no local path,
+     * so the bytes are always pulled to disk; the temp file is cleaned up with
+     * the rest after the build.
      *
      * @return array{path: string, width: int, height: int}|null
      */
     private function resolveImage(?string $relativePath): ?array
     {
-        if ($relativePath === null || ! Storage::disk('public')->exists($relativePath)) {
+        if ($relativePath === null) {
             return null;
         }
 
-        $absolutePath = Storage::disk('public')->path($relativePath);
-        $size = @getimagesize($absolutePath);
+        $disk = MediaDisk::for($relativePath);
+
+        if (! $disk->exists($relativePath)) {
+            return null;
+        }
+
+        $bytes = $disk->get($relativePath);
+
+        if ($bytes === null || $bytes === '') {
+            return null;
+        }
+
+        $size = @getimagesizefromstring($bytes);
 
         if ($size === false || $size[0] < 1 || $size[1] < 1) {
             return null;
         }
 
-        return ['path' => $absolutePath, 'width' => $size[0], 'height' => $size[1]];
+        $extension = image_type_to_extension($size[2], false) ?: 'img';
+        $tempPath = storage_path('app/pdf-tmp/src-'.Str::lower(Str::random(12)).'.'.$extension);
+        File::ensureDirectoryExists(dirname($tempPath));
+        File::put($tempPath, $bytes);
+        $this->tempImages[] = $tempPath;
+
+        return ['path' => $tempPath, 'width' => $size[0], 'height' => $size[1]];
     }
 
     /**

@@ -69,6 +69,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Media storage
+    |--------------------------------------------------------------------------
+    |
+    | Which filesystem disks hold user media. 'disk' is the public/CDN store
+    | for generated covers and page art (set MEDIA_DISK=r2 in production).
+    | 'private_disk' holds uploaded reference photos of children, served only
+    | through short-lived signed URLs (set PRIVATE_MEDIA_DISK=r2_private). Both
+    | default to local disks so development needs no cloud credentials.
+    |
+    */
+
+    'media' => [
+        'disk' => (string) env('MEDIA_DISK', 'public'),
+        'private_disk' => (string) env('PRIVATE_MEDIA_DISK', 'local'),
+        'signed_url_ttl' => (int) env('MEDIA_SIGNED_URL_TTL', 30),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Registration
     |--------------------------------------------------------------------------
     */

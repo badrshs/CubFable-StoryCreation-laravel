@@ -2,7 +2,7 @@
 
 > This document explains how CubFable works as a business and as a product, in plain language for non-technical readers. It contains no code. It is the single source of truth for "what the product does and why". It must be kept up to date whenever the product's behavior changes.
 >
-> Last updated: 2026-07-12
+> Last updated: 2026-07-17
 
 ---
 
@@ -107,6 +107,7 @@ Some important behaviors baked into this pipeline:
 - **Child-safety recovery.** If an image engine refuses a prompt for content-policy reasons, the system first tries the same, untouched prompt on a chain of alternative engines (admin-configurable, default: two other Seedream-family engines then Flux, all on Replicate where refused attempts cost nothing). Only when every engine has refused is the prompt rewritten once in a neutral way (never describing a child's body; also rewording innocent phrases a keyword filter could misread, like "grandfather clock") and the chain tried again. After those two rounds the image is flagged for human review in the admin "Review queue" instead of being retried further. A flagged item never destroys existing work: a page that already has a good illustration keeps it. Infrastructure errors (timeouts, rate limits) retry the same engine and never trigger a rewrite. The hero's character sheet never switches engines, because it anchors the hero's look for the whole book.
 - **Age-appropriate writing rules.** The story engine follows craft rules per age band: 2-4 year-olds get 1-2 very short sentences per page, 8-10 year-olds get up to 3-5 richer sentences. Every story has a clear three-beat arc where the hero solves the problem themselves, the life lesson is woven in rather than preached, there are no invented nonsense words, and the hero is never shown sad, crying, scared, or distressed. Artwork must be weapon-free and non-frightening.
 - **Nothing paid for is ever lost.** Every finished image is kept forever and versioned. If a book fails halfway, resuming it reuses the story and all completed images and only generates what is missing. The customer is never billed twice for the same page.
+- **Where files live, and photo privacy.** Finished covers and page art are stored in cloud object storage and delivered through a fast content-delivery network, so a book's pages load quickly for anyone the owner shares them with. Uploaded photos of the child (and of extra characters) are treated as sensitive and kept in a separate private store, never placed on a public web address; when such a photo has to be shown back (in the wizard or the admin area), it is served through a short-lived private link that expires on its own.
 
 **Book lifecycle at a glance:**
 

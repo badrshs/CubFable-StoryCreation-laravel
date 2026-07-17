@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\PageStatus;
+use App\Support\MediaDisk;
 use Database\Factories\PageFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -10,7 +11,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * @property int $id
@@ -83,6 +83,6 @@ class Page extends Model
     {
         return Attribute::make(get: fn (): ?string => $this->image_path === null
             ? null
-            : Storage::disk('public')->url($this->image_path));
+            : MediaDisk::public()->url($this->image_path));
     }
 }

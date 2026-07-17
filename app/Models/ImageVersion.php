@@ -2,10 +2,10 @@
 
 namespace App\Models;
 
+use App\Support\MediaDisk;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * One generated image file for a book slot (cover, character sheet, or a
@@ -65,8 +65,8 @@ class ImageVersion extends Model
 
     public function url(): ?string
     {
-        return Storage::disk('public')->exists($this->path)
-            ? Storage::disk('public')->url($this->path)
+        return MediaDisk::public()->exists($this->path)
+            ? MediaDisk::public()->url($this->path)
             : null;
     }
 }

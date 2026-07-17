@@ -10,11 +10,11 @@ use App\Services\AI\Replicate\ReplicateModel;
 use App\Services\AI\Replicate\ReplicateModelCatalog;
 use App\Services\AI\UsageCollector;
 use App\Services\AI\UsageEvent;
+use App\Support\MediaDisk;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
 use RuntimeException;
 
@@ -429,7 +429,7 @@ class ReplicateProvider implements AiProvider, SupportsImageGroups
      */
     private function uploadReference(ImageReference $reference): string
     {
-        $bytes = Storage::disk('public')->get($reference->path);
+        $bytes = MediaDisk::for($reference->path)->get($reference->path);
 
         if ($bytes === null) {
             throw new RuntimeException("Reference image [{$reference->path}] could not be read.");

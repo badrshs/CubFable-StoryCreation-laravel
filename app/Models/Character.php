@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\MediaDisk;
 use Database\Factories\CharacterFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -10,7 +11,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * @property int $id
@@ -57,7 +57,9 @@ class Character extends Model
     }
 
     /**
-     * The public URL of the reference photo, if one exists.
+     * A short-lived signed URL to the reference photo, if one exists. The
+     * photo lives on the private disk, so it is never served from a public
+     * URL.
      *
      * @return Attribute<string|null, never>
      */
@@ -65,6 +67,6 @@ class Character extends Model
     {
         return Attribute::make(get: fn (): ?string => $this->photo_path === null
             ? null
-            : Storage::disk('public')->url($this->photo_path));
+            : MediaDisk::temporaryUrl($this->photo_path));
     }
 }

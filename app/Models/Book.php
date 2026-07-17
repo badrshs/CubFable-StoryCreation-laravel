@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\BookStatus;
+use App\Support\MediaDisk;
 use Database\Factories\BookFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -12,7 +13,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * @property int $id
@@ -150,6 +150,6 @@ class Book extends Model
     {
         return Attribute::make(get: fn (): ?string => $this->cover_image_path === null
             ? null
-            : Storage::disk('public')->url($this->cover_image_path));
+            : MediaDisk::public()->url($this->cover_image_path));
     }
 }

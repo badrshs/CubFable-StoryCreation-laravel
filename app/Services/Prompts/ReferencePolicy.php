@@ -4,7 +4,7 @@ namespace App\Services\Prompts;
 
 use App\Models\Character;
 use App\Services\AI\Replicate\ReplicateModelCatalog;
-use Illuminate\Support\Facades\Storage;
+use App\Support\MediaDisk;
 
 /**
  * The engine policy for identity material: how many reference images can
@@ -118,6 +118,6 @@ class ReferencePolicy
     {
         return $character->photo_path !== null
             && $character->photo_path !== ''
-            && Storage::disk('public')->exists($character->photo_path);
+            && MediaDisk::private()->exists($character->photo_path);
     }
 }

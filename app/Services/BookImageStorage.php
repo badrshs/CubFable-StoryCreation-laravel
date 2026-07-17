@@ -2,16 +2,17 @@
 
 namespace App\Services;
 
+use App\Support\MediaDisk;
 use finfo;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
 /**
- * Stores book and character imagery on the public disk. Layout:
- *   books/{bookId}/cover-{rand}.png
- *   books/{bookId}/pages/{n}-{rand}.png
- *   characters/{characterId}/photo-{rand}.jpg
+ * Stores book and character imagery. Generated art goes on the public/CDN
+ * disk; uploaded photos go on the private disk. Layout:
+ *   books/{bookId}/cover-{rand}.png       (public)
+ *   books/{bookId}/pages/{n}-{rand}.png   (public)
+ *   characters/{characterId}/photo-{rand}.jpg (private)
  */
 class BookImageStorage
 {
@@ -58,7 +59,7 @@ class BookImageStorage
 
         $path = trim($directory, '/').'/photo-'.Str::lower(Str::random(8)).'.'.$extension;
 
-        Storage::disk('public')->put($path, $bytes);
+        MediaDisk::private()->put($path, $bytes);
 
         return $path;
     }
@@ -68,7 +69,7 @@ class BookImageStorage
      */
     public function storeGenerated(string $bytes, string $path): string
     {
-        Storage::disk('public')->put($path, $bytes);
+        MediaDisk::public()->put($path, $bytes);
 
         return $path;
     }
@@ -82,7 +83,7 @@ class BookImageStorage
             return;
         }
 
-        Storage::disk('public')->delete($path);
+        MediaDisk::for($path)->delete($path);
     }
 
     /**
@@ -91,6 +92,6 @@ class BookImageStorage
      */
     public function deleteDirectory(string $directory): void
     {
-        Storage::disk('public')->deleteDirectory($directory);
+        MediaDisk::for($directory)->deleteDirectory($directory);
     }
 }
