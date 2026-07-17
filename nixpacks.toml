@@ -19,7 +19,7 @@ cmd = "/assets/start.sh"
 set -e
 php /app/artisan migrate --force
 php /app/artisan storage:link --force
-node /assets/scripts/prestart.mjs /assets/nginx.template.conf /nginx.conf
+node /assets/scripts/prestart.mjs /assets/nginx.cubfable.conf /nginx.conf
 exec supervisord -c /etc/supervisord.conf
 '''
 
@@ -89,4 +89,69 @@ numprocs=1
 priority=20
 stderr_logfile=/app/storage/logs/queue.err.log
 stdout_logfile=/app/storage/logs/queue.out.log
+'''
+
+# Custom nginx template: the stock Nixpacks PHP template renders TWO
+# `location /` blocks for this app (both IS_LARAVEL and
+# NIXPACKS_PHP_FALLBACK_PATH are set), which makes nginx fail with
+# "duplicate location". This is the same config with a single `location /`.
+"nginx.cubfable.conf" = '''
+worker_processes 5;
+daemon off;
+
+worker_rlimit_nofile 8192;
+
+events {
+  worker_connections  4096;
+}
+
+http {
+    include    $!{nginx}/conf/mime.types;
+    index    index.html index.htm index.php;
+
+    default_type application/octet-stream;
+    log_format   main '$remote_addr - $remote_user [$time_local]  $status '
+        '"$request" $body_bytes_sent "$http_referer" '
+        '"$http_user_agent" "$http_x_forwarded_for"';
+    access_log /dev/stdout;
+    error_log /dev/stdout;
+    sendfile     on;
+    tcp_nopush   on;
+    server_names_hash_bucket_size 128;
+
+    server {
+        listen ${PORT};
+        listen [::]:${PORT};
+        server_name localhost;
+
+        root /app/public;
+
+        add_header X-Frame-Options "SAMEORIGIN";
+        add_header X-Content-Type-Options "nosniff";
+
+        index index.php;
+
+        charset utf-8;
+
+        location / {
+            try_files $uri $uri/ /index.php?$query_string;
+        }
+
+        location = /favicon.ico { access_log off; log_not_found off; }
+        location = /robots.txt  { access_log off; log_not_found off; }
+
+        error_page 404 /index.php;
+
+        location ~ \.php$ {
+            fastcgi_pass 127.0.0.1:9000;
+            fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+            include $!{nginx}/conf/fastcgi_params;
+            include $!{nginx}/conf/fastcgi.conf;
+        }
+
+        location ~ /\.(?!well-known).* {
+            deny all;
+        }
+    }
+}
 '''
