@@ -6,6 +6,7 @@ use App\Enums\ArtStyle;
 use App\Enums\BookStatus;
 use App\Enums\PageStatus;
 use App\Enums\StoryLanguage;
+use App\Http\Controllers\Concerns\FindsAccessibleBooks;
 use App\Http\Controllers\Concerns\MapsCubfableProps;
 use App\Http\Requests\StoreBookRequest;
 use App\Http\Requests\UpdateBookRequest;
@@ -27,7 +28,7 @@ use InvalidArgumentException;
 
 class BookController extends Controller
 {
-    use MapsCubfableProps;
+    use FindsAccessibleBooks, MapsCubfableProps;
 
     /**
      * Show the three-step creation wizard for a template.
@@ -124,14 +125,13 @@ class BookController extends Controller
     }
 
     /**
-     * Show the reader for one of the user's books. A book owned by someone
-     * else is indistinguishable from one that does not exist (404, never 403).
+     * Show the reader for one of the user's books (admins may open any
+     * book). A book owned by someone else is indistinguishable from one that
+     * does not exist (404, never 403).
      */
     public function show(Request $request, int $id): Response
     {
-        $book = $request->user()->books()
-            ->with(['pages', 'characters'])
-            ->findOrFail($id);
+        $book = $this->accessibleBook($request, $id, ['pages', 'characters']);
 
         return Inertia::render('reader', [
             'book' => $this->bookWithPagesProps($book),
@@ -252,7 +252,7 @@ class BookController extends Controller
      */
     public function regenerateCover(Request $request, int $id): RedirectResponse
     {
-        $book = $request->user()->books()->findOrFail($id);
+        $book = $this->accessibleBook($request, $id);
 
         abort_if($book->status === BookStatus::Draft, 402);
 
@@ -271,7 +271,7 @@ class BookController extends Controller
      */
     public function restyle(Request $request, BookRestyler $restyler, int $id): RedirectResponse
     {
-        $book = $request->user()->books()->findOrFail($id);
+        $book = $this->accessibleBook($request, $id);
 
         abort_if($book->status === BookStatus::Draft, 402);
 

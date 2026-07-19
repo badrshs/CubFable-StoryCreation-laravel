@@ -157,7 +157,7 @@ Cover, half-title page, imprint/copyright page, a dedication page ("For [child's
 - Sign-up, sign-in, and "forgot password" are protected against bots by an invisible Cloudflare check (Turnstile). Real visitors normally see nothing; suspicious traffic gets a quick challenge. If the check is not configured or Cloudflare is briefly unreachable, the forms keep working so no customer is ever locked out.
 - Sign-in supports email and password, optional two-factor authentication, and passkeys.
 - Only two roles exist: customer and admin (a flag on the user account).
-- A customer can only see their own books, characters, and orders. Someone else's book behaves as if it does not exist.
+- A customer can only see their own books, characters, and orders. Someone else's book behaves as if it does not exist. Admins are the one exception: to support customers, an admin can open any book in the normal reader and use everything in it (edit page text, regenerate images, restyle, download the PDF).
 - Payments can only be confirmed by trusted signals (Stripe's verified notification or a direct server-side check with Stripe), never by anything the browser claims.
 
 ### Fair use of free perks

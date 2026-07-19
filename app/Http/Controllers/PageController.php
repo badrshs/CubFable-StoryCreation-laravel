@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\BookStatus;
 use App\Enums\PageStatus;
+use App\Http\Controllers\Concerns\FindsAccessibleBooks;
 use App\Http\Requests\UpdatePageRequest;
 use App\Jobs\RegeneratePageJob;
 use Illuminate\Http\RedirectResponse;
@@ -11,14 +12,16 @@ use Illuminate\Http\Request;
 
 class PageController extends Controller
 {
+    use FindsAccessibleBooks;
+
     /**
      * Edit the text of a page. Pages have no owner column of their own, so
      * ownership is enforced through the parent book: a page under a book the
-     * caller does not own is treated as not found (404).
+     * caller does not own (admins excepted) is treated as not found (404).
      */
     public function update(UpdatePageRequest $request, int $id, int $pageId): RedirectResponse
     {
-        $book = $request->user()->books()->findOrFail($id);
+        $book = $this->accessibleBook($request, $id);
         $page = $book->pages()->findOrFail($pageId);
 
         $page->update(['text' => $request->validated()['text']]);
@@ -31,7 +34,7 @@ class PageController extends Controller
      */
     public function regenerate(Request $request, int $id, int $pageId): RedirectResponse
     {
-        $book = $request->user()->books()->findOrFail($id);
+        $book = $this->accessibleBook($request, $id);
 
         abort_if($book->status === BookStatus::Draft, 402);
 
