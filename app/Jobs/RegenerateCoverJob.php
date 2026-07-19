@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Book;
+use App\Services\BookStopSignal;
 use App\Services\StoryGenerator;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -37,13 +38,17 @@ class RegenerateCoverJob implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(StoryGenerator $generator): void
+    public function handle(StoryGenerator $generator, BookStopSignal $stopSignal): void
     {
         $book = Book::query()->find($this->bookId);
 
         if ($book === null) {
             return;
         }
+
+        // Starting a regeneration is an intentional act: a stop flag left
+        // over from halting an earlier run (1 hour TTL) must not kill it.
+        $stopSignal->clear($book->id);
 
         Context::add('book_id', $book->id);
         Log::info('Regenerating the cover.');

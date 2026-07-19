@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\BookStatus;
 use App\Enums\PageStatus;
 use App\Jobs\GenerateStorybookJob;
+use App\Jobs\RegenerateCoverJob;
 use App\Models\Book;
 use App\Models\Character;
 use App\Models\Template;
@@ -167,6 +168,32 @@ class BookStopTest extends TestCase
         // The old run must not overwrite Pending with Failed, or the queued
         // restyle job refuses to start and the book is stuck.
         $this->assertSame(BookStatus::Pending, $book->refresh()->status);
+    }
+
+    public function test_a_stale_stop_flag_does_not_kill_a_queued_regeneration(): void
+    {
+        [, $book] = $this->pendingBookWithCast();
+
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), 'chat/completions')) {
+                return Http::response($this->storyChatResponse());
+            }
+
+            return Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]);
+        });
+
+        (new GenerateStorybookJob($book->id))->handle(app(StoryGenerator::class));
+        $this->assertSame(BookStatus::Complete, $book->refresh()->status);
+
+        // The admin pressed Stop and the flag lingers (1 hour TTL). Queuing a
+        // regeneration afterwards is an intentional act; the stale flag must
+        // not kill it.
+        app(BookStopSignal::class)->request($book->id);
+
+        (new RegenerateCoverJob($book->id))->handle(app(StoryGenerator::class), app(BookStopSignal::class));
+
+        $this->assertFalse(app(BookStopSignal::class)->requested($book->id));
+        $this->assertNotSame('failed', $book->refresh()->cover_status);
     }
 
     public function test_the_admin_stop_endpoint_sets_the_signal(): void

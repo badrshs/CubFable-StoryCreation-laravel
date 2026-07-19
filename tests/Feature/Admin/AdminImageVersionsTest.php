@@ -12,6 +12,7 @@ use App\Models\ImageVersion;
 use App\Models\Page;
 use App\Models\Template;
 use App\Models\User;
+use App\Services\BookStopSignal;
 use App\Services\StoryGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -105,7 +106,7 @@ class AdminImageVersionsTest extends TestCase
             'api.openai.com/*' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
         ]);
 
-        (new RegeneratePageJob($page->id))->handle(app(StoryGenerator::class));
+        (new RegeneratePageJob($page->id))->handle(app(StoryGenerator::class), app(BookStopSignal::class));
 
         $page->refresh();
         $this->assertNotSame($oldPath, $page->image_path);

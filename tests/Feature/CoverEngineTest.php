@@ -11,6 +11,7 @@ use App\Models\Character;
 use App\Models\ImageVersion;
 use App\Models\Template;
 use App\Models\User;
+use App\Services\BookStopSignal;
 use App\Services\StoryGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -146,7 +147,7 @@ class CoverEngineTest extends TestCase
             'api.openai.com/v1/images/generations' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
         ]);
 
-        (new RegenerateCoverJob($book->id, 'openai', null))->handle(app(StoryGenerator::class));
+        (new RegenerateCoverJob($book->id, 'openai', null))->handle(app(StoryGenerator::class), app(BookStopSignal::class));
 
         $book->refresh();
         $this->assertNotNull($book->cover_image_path);
@@ -170,7 +171,7 @@ class CoverEngineTest extends TestCase
             'api.openai.com/v1/images/generations' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
         ]);
 
-        (new RegenerateCoverJob($book->id))->handle(app(StoryGenerator::class));
+        (new RegenerateCoverJob($book->id))->handle(app(StoryGenerator::class), app(BookStopSignal::class));
 
         Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), 'api.replicate.com'));
         $this->assertSame(1, ImageVersion::query()->where('book_id', $book->id)->where('slot', 'cover')->where('engine_provider', 'openai')->count());
