@@ -7,6 +7,7 @@ use App\Models\UserDevice;
 use App\Models\UserIp;
 use App\Services\Abuse\AbuseGuard;
 use App\Services\Abuse\IpIntelligence;
+use App\Support\ClientIp;
 use Closure;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
@@ -104,7 +105,7 @@ class RecordDeviceIdentity
             $device->update($updates);
         }
 
-        $ip = $request->ip();
+        $ip = ClientIp::from($request);
 
         if ($ip === null) {
             return;

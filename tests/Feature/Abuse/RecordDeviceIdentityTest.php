@@ -60,6 +60,40 @@ class RecordDeviceIdentityTest extends TestCase
         ]);
     }
 
+    public function test_cloudflare_connecting_ip_header_wins_over_the_proxy_ip(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->withHeader('CF-Connecting-IP', '203.0.113.50')
+            ->withCookie('cf_did', (string) Str::uuid())
+            ->get(route('books.index'));
+
+        $this->assertDatabaseHas('user_ips', [
+            'user_id' => $user->id,
+            'ip' => '203.0.113.50',
+        ]);
+        $this->assertDatabaseMissing('user_ips', [
+            'user_id' => $user->id,
+            'ip' => '127.0.0.1',
+        ]);
+    }
+
+    public function test_invalid_cloudflare_header_falls_back_to_the_request_ip(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->withHeader('CF-Connecting-IP', 'not-an-ip')
+            ->withCookie('cf_did', (string) Str::uuid())
+            ->get(route('books.index'));
+
+        $this->assertDatabaseHas('user_ips', [
+            'user_id' => $user->id,
+            'ip' => '127.0.0.1',
+        ]);
+    }
+
     public function test_guest_request_records_nothing(): void
     {
         $this->withCookie('cf_did', (string) Str::uuid())

@@ -6,6 +6,7 @@ use App\Models\BenefitGrant;
 use App\Models\User;
 use App\Models\UserDevice;
 use App\Models\UserIp;
+use App\Support\ClientIp;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Str;
@@ -84,7 +85,7 @@ class AbuseGuard
         if (($currentFingerprint = $this->currentFingerprint()) !== null) {
             $fingerprints[] = $currentFingerprint;
         }
-        if (($currentIp = request()->ip()) !== null) {
+        if (($currentIp = ClientIp::from(request())) !== null) {
             $ips[] = $currentIp;
         }
 
@@ -125,7 +126,7 @@ class AbuseGuard
             return false;
         }
 
-        $ip = request()->ip();
+        $ip = ClientIp::from(request());
 
         if ($ip === null) {
             return true;
@@ -148,7 +149,7 @@ class AbuseGuard
                 'benefit' => $benefit,
                 'device_id' => $this->currentDeviceId(),
                 'fingerprint' => $this->currentFingerprint(),
-                'ip' => request()->ip(),
+                'ip' => ClientIp::from(request()),
             ]);
         } catch (UniqueConstraintViolationException) {
             return $user->benefitGrants()->where('benefit', $benefit)->firstOrFail();
