@@ -24,7 +24,7 @@ class RegistrationTest extends TestCase
         $response->assertOk();
     }
 
-    public function test_new_users_can_register()
+    public function test_new_users_can_register_and_land_on_the_verification_notice()
     {
         $response = $this->post(route('register.store'), [
             'name' => 'Test User',
@@ -34,7 +34,7 @@ class RegistrationTest extends TestCase
         ]);
 
         $this->assertAuthenticated();
-        $response->assertRedirect(route('books.index', absolute: false));
+        $response->assertRedirect(route('verification.notice'));
     }
 
     public function test_registration_is_rejected_when_closed_by_the_runtime_setting()

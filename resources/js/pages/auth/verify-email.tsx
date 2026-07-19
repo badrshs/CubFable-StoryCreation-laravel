@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import type { AuthLayoutProps } from '@/layouts/auth-layout';
 import { logout } from '@/routes';
+import { index as booksIndex } from '@/routes/books';
 import { send } from '@/routes/verification';
 
 export default function VerifyEmail({ status }: { status?: string }) {
@@ -32,6 +33,19 @@ export default function VerifyEmail({ status }: { status?: string }) {
                             Resend verification email
                         </Button>
 
+                        <div className="space-y-2">
+                            <TextLink
+                                href={booksIndex()}
+                                className="mx-auto block text-sm"
+                            >
+                                Skip for now
+                            </TextLink>
+                            <p className="text-xs text-muted-foreground">
+                                You can verify later, but some features may not
+                                be available until your email is verified.
+                            </p>
+                        </div>
+
                         <TextLink
                             href={logout()}
                             className="mx-auto block text-sm"
@@ -47,7 +61,7 @@ export default function VerifyEmail({ status }: { status?: string }) {
 
 VerifyEmail.layout = {
     eyebrow: 'One last step',
-    title: 'Email verification',
+    title: 'Verify your email',
     subtitle:
-        'Please verify your email address by clicking on the link we just emailed to you.',
+        'We just emailed you a verification link. Click it to unlock everything, or skip for now and verify later.',
 } satisfies AuthLayoutProps;
