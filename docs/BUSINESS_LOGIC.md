@@ -154,6 +154,7 @@ Cover, half-title page, imprint/copyright page, a dedication page ("For [child's
 - Registration is open by default but the admin can close it.
 - New accounts must confirm their email address by clicking a link sent to their inbox. Right after signing up, the user lands on a "verify your email" screen where they can resend the link or skip for now; skipping is allowed, with a note that some features may stay hidden until the email is verified. Users who skip see a reminder banner across the site with a one-click way back to the verification screen. Throwaway "disposable" email addresses (temporary inbox services) are rejected at sign-up. Accounts that existed before this rule are treated as already confirmed.
 - Email-related actions are rate limited to protect the daily sending quota: the "resend verification email" button works once per minute (a few times per hour at most), and one network address can create at most a few accounts per hour.
+- Sign-up, sign-in, and "forgot password" are protected against bots by an invisible Cloudflare check (Turnstile). Real visitors normally see nothing; suspicious traffic gets a quick challenge. If the check is not configured or Cloudflare is briefly unreachable, the forms keep working so no customer is ever locked out.
 - Sign-in supports email and password, optional two-factor authentication, and passkeys.
 - Only two roles exist: customer and admin (a flag on the user account).
 - A customer can only see their own books, characters, and orders. Someone else's book behaves as if it does not exist.
@@ -192,7 +193,7 @@ Admins have their own section of the site with:
 
 From the current backlog, in priority order:
 
-- **Now (P0)**: bot protection on registration/login (Cloudflare Turnstile); much more detailed tracking of exactly where a generating book is, to power a better progress screen. (Smarter content-flag recovery with an engine fallback chain and an admin review queue shipped and is described in sections 3 and 7.)
+- **Now (P0)**: much more detailed tracking of exactly where a generating book is, to power a better progress screen. (Bot protection on registration/login shipped and is described in section 6; smarter content-flag recovery with an engine fallback chain and an admin review queue shipped and is described in sections 3 and 7.)
 - **Next (P1)**: a clearer live progress UI for customers; email notifications when a book completes or fails; an admin quality-assurance dashboard; letting customers resume a failed book themselves (with strict retry limits); a gift-a-storybook flow; one-click "make another book with this child and cast"; series/sequel support; discovering templates by occasion (birthday, new sibling, first day of school); wizard questions about the emotional goal of the book; a sibling/family bundle.
 - **Later (P2)**: tiered products (digital-only, standard PDF, print-ready PDF as an upsell); richer character "passport" profiles.
 - **Ideas (P3)**: an optional paid checkpoint where parents approve the story text before the (expensive) illustrations are made; a "Memory Book" mode that builds sentimental books from real family photos and memories.

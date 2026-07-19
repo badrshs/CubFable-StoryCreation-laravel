@@ -4,10 +4,12 @@ namespace App\Providers;
 
 use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\ResetUserPassword;
+use App\Http\Middleware\VerifyTurnstile;
 use App\Http\Responses\RegisterResponse;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
@@ -34,6 +36,25 @@ class FortifyServiceProvider extends ServiceProvider
         $this->configureActions();
         $this->configureViews();
         $this->configureRateLimiting();
+        $this->configureTurnstile();
+    }
+
+    /**
+     * Attach Turnstile bot verification to the bot-sensitive Fortify POST
+     * endpoints. Fortify registers its own routes, so the middleware is
+     * appended after all routes exist.
+     */
+    private function configureTurnstile(): void
+    {
+        $this->app->booted(function (): void {
+            // Names are attached after the routes are added to the collection,
+            // so the lookup table must be rebuilt before getByName works here.
+            Route::getRoutes()->refreshNameLookups();
+
+            foreach (['login.store', 'register.store', 'password.email'] as $name) {
+                Route::getRoutes()->getByName($name)?->middleware(VerifyTurnstile::class);
+            }
+        });
     }
 
     /**

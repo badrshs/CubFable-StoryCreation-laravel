@@ -49,6 +49,8 @@ class HandleInertiaRequests extends Middleware
             // Whether character photos upload as the untouched original file
             // or a browser-side 768px downscale (admin runtime setting).
             'photoUploadQuality' => (string) config('cubfable.uploads.photo_quality', 'original'),
+            // Empty string disables the bot check (widget hidden, server skips).
+            'turnstileSiteKey' => (string) config('services.turnstile.site_key'),
         ];
     }
 }

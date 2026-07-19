@@ -41,4 +41,14 @@ return [
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
     ],
 
+    /*
+     * Cloudflare Turnstile bot protection on the auth endpoints. Leaving the
+     * keys empty disables the check entirely (widget hidden, server skips),
+     * so development and tests need no Cloudflare account.
+     */
+    'turnstile' => [
+        'site_key' => env('TURNSTILE_SITE_KEY', ''),
+        'secret_key' => env('TURNSTILE_SECRET_KEY', ''),
+    ],
+
 ];

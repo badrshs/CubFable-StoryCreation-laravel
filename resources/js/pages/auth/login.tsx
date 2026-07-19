@@ -5,6 +5,7 @@ import PasskeyVerify from '@/components/passkey-verify';
 import PasswordInput from '@/components/password-input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import TurnstileWidget from '@/components/turnstile-widget';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useI18n } from '@/i18n';
@@ -107,6 +108,8 @@ export default function Login({ status, canResetPassword }: Props) {
                                 {tc('auth.rememberMe', 'Remember me')}
                             </Label>
                         </div>
+
+                        <TurnstileWidget error={errors.turnstile} />
 
                         <div aria-live="polite" className="min-h-[1.25rem]">
                             {errors.email && (
