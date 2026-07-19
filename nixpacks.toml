@@ -91,6 +91,21 @@ stderr_logfile=/app/storage/logs/queue.err.log
 stdout_logfile=/app/storage/logs/queue.out.log
 '''
 
+# Laravel scheduler: without this process scheduled tasks (weekly
+# disposable-email list refresh, weekly VPN/datacenter IP list refresh)
+# never run in the container.
+"worker-schedule.conf" = '''
+[program:schedule]
+command=php /app/artisan schedule:work
+directory=/app
+autostart=true
+autorestart=true
+numprocs=1
+priority=30
+stderr_logfile=/app/storage/logs/schedule.err.log
+stdout_logfile=/app/storage/logs/schedule.out.log
+'''
+
 # Custom nginx template: the stock Nixpacks PHP template renders TWO
 # `location /` blocks for this app (both IS_LARAVEL and
 # NIXPACKS_PHP_FALLBACK_PATH are set), which makes nginx fail with
