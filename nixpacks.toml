@@ -19,6 +19,9 @@ cmd = "/assets/start.sh"
 set -e
 php /app/artisan migrate --force
 php /app/artisan storage:link --force
+# The VPN/datacenter CIDR lists live in the container filesystem and are
+# wiped by every redeploy; refresh them on boot. Never block startup on it.
+php /app/artisan abuse:update-ip-lists || true
 node /assets/scripts/prestart.mjs /assets/nginx.cubfable.conf /nginx.conf
 exec supervisord -c /etc/supervisord.conf
 '''
