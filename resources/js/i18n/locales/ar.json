@@ -1,4 +1,6 @@
 {
+  "verify.banner": "يرجى تأكيد بريدك الإلكتروني. ستبقى بعض الميزات مخفية حتى تقوم بذلك.",
+  "verify.bannerCta": "تأكيد الآن",
   "auth.registrationClosed": "التسجيل مغلق حاليًا.",
   "auth.loginTitle": "مرحبًا بعودتك",
   "auth.loginSubtitle": "سجّل الدخول لعرض كتبك.",

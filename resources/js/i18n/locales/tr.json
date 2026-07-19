@@ -1,4 +1,6 @@
 {
+  "verify.banner": "Lütfen e-posta adresinizi doğrulayın. Bazı özellikler doğrulayana kadar gizli kalır.",
+  "verify.bannerCta": "Şimdi doğrula",
   "auth.registrationClosed": "Kayıtlar şu anda kapalı.",
   "auth.loginTitle": "Tekrar hoş geldiniz",
   "auth.loginSubtitle": "Kitaplarınızı görmek için giriş yapın.",

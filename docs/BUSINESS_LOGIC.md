@@ -152,7 +152,8 @@ Cover, half-title page, imprint/copyright page, a dedication page ("For [child's
 ## 6. Accounts and security
 
 - Registration is open by default but the admin can close it.
-- New accounts must confirm their email address by clicking a link sent to their inbox. Right after signing up, the user lands on a "verify your email" screen where they can resend the link or skip for now; skipping is allowed, with a note that some features may stay hidden until the email is verified. Throwaway "disposable" email addresses (temporary inbox services) are rejected at sign-up. Accounts that existed before this rule are treated as already confirmed.
+- New accounts must confirm their email address by clicking a link sent to their inbox. Right after signing up, the user lands on a "verify your email" screen where they can resend the link or skip for now; skipping is allowed, with a note that some features may stay hidden until the email is verified. Users who skip see a reminder banner across the site with a one-click way back to the verification screen. Throwaway "disposable" email addresses (temporary inbox services) are rejected at sign-up. Accounts that existed before this rule are treated as already confirmed.
+- Email-related actions are rate limited to protect the daily sending quota: the "resend verification email" button works once per minute (a few times per hour at most), and one network address can create at most a few accounts per hour.
 - Sign-in supports email and password, optional two-factor authentication, and passkeys.
 - Only two roles exist: customer and admin (a flag on the user account).
 - A customer can only see their own books, characters, and orders. Someone else's book behaves as if it does not exist.

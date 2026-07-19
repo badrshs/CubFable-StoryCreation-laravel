@@ -1,4 +1,6 @@
 {
+  "verify.banner": "Por favor, verifica tu correo electrónico. Algunas funciones permanecerán ocultas hasta que lo hagas.",
+  "verify.bannerCta": "Verificar ahora",
   "auth.registrationClosed": "El registro está cerrado por el momento.",
   "auth.loginTitle": "Bienvenido de nuevo",
   "auth.loginSubtitle": "Inicia sesión para ver tus libros.",

@@ -98,5 +98,17 @@ class FortifyServiceProvider extends ServiceProvider
                 ($request->input('credential.id') ?: $request->session()->getId()).'|'.$request->ip(),
             );
         });
+
+        // Resending the verification email costs real mail quota (Brevo's
+        // free tier is 300/day), so keep the resend button polite: one per
+        // minute and a handful per hour, per user.
+        RateLimiter::for('verification', function (Request $request) {
+            $key = $request->user()?->id ?: $request->ip();
+
+            return [
+                Limit::perMinute(1)->by('verification:'.$key),
+                Limit::perHour(6)->by('verification-hourly:'.$key),
+            ];
+        });
     }
 }

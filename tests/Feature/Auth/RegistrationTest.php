@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Fortify\Features;
 use Tests\TestCase;
@@ -51,6 +52,37 @@ class RegistrationTest extends TestCase
         $response->assertForbidden();
         $this->assertGuest();
         $this->assertDatabaseCount('users', 0);
+    }
+
+    public function test_registrations_from_one_ip_are_rate_limited()
+    {
+        foreach (range(1, 3) as $i) {
+            $this->post(route('register.store'), [
+                'name' => "Test User {$i}",
+                'email' => "test{$i}@example.com",
+                'password' => 'password',
+                'password_confirmation' => 'password',
+            ]);
+            $this->post(route('logout'));
+        }
+
+        $response = $this->post(route('register.store'), [
+            'name' => 'Test User 4',
+            'email' => 'test4@example.com',
+            'password' => 'password',
+            'password_confirmation' => 'password',
+        ]);
+
+        $response->assertInvalid(['email']);
+        $this->assertDatabaseCount('users', 3);
+    }
+
+    public function test_verification_email_resend_is_rate_limited()
+    {
+        $user = User::factory()->unverified()->create();
+
+        $this->actingAs($user)->post(route('verification.send'))->assertRedirect();
+        $this->actingAs($user)->post(route('verification.send'))->assertStatus(429);
     }
 
     public function test_registration_open_shared_prop_reflects_the_runtime_setting()

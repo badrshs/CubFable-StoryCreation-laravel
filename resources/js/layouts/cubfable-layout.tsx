@@ -27,6 +27,7 @@ import { account, home, login, logout, register } from '@/routes';
 import { index as booksIndex } from '@/routes/books';
 import { index as charactersIndex } from '@/routes/characters';
 import { index as templatesIndex } from '@/routes/templates';
+import { notice as verificationNotice } from '@/routes/verification';
 
 const navLink =
     'text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors';
@@ -193,6 +194,20 @@ export default function CubFableLayout({ children }: { children: ReactNode }) {
                     </div>
                 </div>
             </header>
+
+            {user && !user.email_verified_at && (
+                <div className="border-b border-amber-300/60 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/40">
+                    <div className="container mx-auto flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-4 py-2 text-center text-sm text-amber-900 dark:text-amber-200">
+                        <span>{t('verify.banner')}</span>
+                        <Link
+                            href={verificationNotice()}
+                            className="font-semibold underline underline-offset-2 hover:opacity-80"
+                        >
+                            {t('verify.bannerCta')}
+                        </Link>
+                    </div>
+                </div>
+            )}
 
             <main className="flex flex-1 flex-col">{children}</main>
 
