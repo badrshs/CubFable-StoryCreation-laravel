@@ -9,9 +9,11 @@ use App\Models\Template;
 use App\Models\User;
 use App\Services\AI\PromptLogContext;
 use App\Services\AI\SafeImageGenerator;
+use App\Services\BookStopSignal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
+use RuntimeException;
 use Tests\TestCase;
 
 class SafeImageGeneratorTest extends TestCase
@@ -116,6 +118,53 @@ class SafeImageGeneratorTest extends TestCase
         $this->assertSame(['openai', 'openai', 'openai', 'openai'], $journal->pluck('provider')->all());
         $this->assertTrue($journal->every(fn (ImagePrompt $row): bool => ! $row->accepted));
         $this->assertTrue($journal->every(fn (ImagePrompt $row): bool => str_contains((string) $row->error, 'content policy violation')));
+    }
+
+    public function test_an_admin_stop_aborts_before_the_next_attempt(): void
+    {
+        config()->set('cubfable.ai.fallback_engines', 'openai:backup-model');
+
+        $user = User::factory()->create();
+        $template = Template::factory()->create();
+        $book = Book::factory()->pending()->for($user)->for($template)->create();
+
+        Http::fake([
+            'api.openai.com/v1/images/generations' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+        ]);
+
+        app(BookStopSignal::class)->request($book->id);
+
+        $thrown = null;
+
+        try {
+            app(SafeImageGenerator::class)->generate('a child in the forest', '1024x1536', [], 'test', new PromptLogContext($book->id, 'page'));
+        } catch (RuntimeException $exception) {
+            $thrown = $exception;
+        }
+
+        // Not a single engine attempt starts once the stop flag is set: the
+        // stop lands within one attempt instead of one full fallback walk.
+        $this->assertNotNull($thrown);
+        $this->assertSame('Generation stopped by the admin.', $thrown->getMessage());
+        Http::assertNothingSent();
+    }
+
+    public function test_a_stop_for_another_book_does_not_interfere(): void
+    {
+        $user = User::factory()->create();
+        $template = Template::factory()->create();
+        $book = Book::factory()->pending()->for($user)->for($template)->create();
+        $otherBook = Book::factory()->pending()->for($user)->for($template)->create();
+
+        Http::fake([
+            'api.openai.com/v1/images/generations' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+        ]);
+
+        app(BookStopSignal::class)->request($otherBook->id);
+
+        $image = app(SafeImageGenerator::class)->generate('a child in the forest', '1024x1536', [], 'test', new PromptLogContext($book->id, 'page'));
+
+        $this->assertSame(base64_decode(self::PNG_BASE64), $image->bytes);
     }
 
     public function test_each_engine_composes_its_own_prompt(): void

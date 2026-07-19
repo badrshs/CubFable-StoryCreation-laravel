@@ -68,7 +68,11 @@ class GenerateStorybookJob implements ShouldQueue
             return;
         }
 
-        $book->update(['status' => BookStatus::Failed]);
+        // Same ownership rule as the pipeline's own failure handling: a book
+        // already requeued (Pending) must not be clobbered back to Failed.
+        Book::query()->whereKey($book->id)
+            ->where('status', BookStatus::Generating)
+            ->update(['status' => BookStatus::Failed]);
         $book->pages()->where('status', PageStatus::Generating)->update(['status' => PageStatus::Failed]);
     }
 }

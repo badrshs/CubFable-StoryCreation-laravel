@@ -185,7 +185,18 @@ class StoryGenerator
             Log::info('Book generation complete.');
         } catch (Throwable $exception) {
             Log::error("Storybook generation failed: {$exception->getMessage()}");
-            $book->update(['status' => BookStatus::Failed]);
+
+            // A restyle or resume may already have flipped this book back to
+            // Pending and queued a new run; only the run that still owns the
+            // book (status Generating) may mark it Failed, or the queued run
+            // refuses to start and the book is stuck.
+            Book::query()->whereKey($book->id)
+                ->where('status', BookStatus::Generating)
+                ->update(['status' => BookStatus::Failed]);
+
+            // An honored stop has served its purpose. Left in place (1 hour
+            // TTL) it would instantly kill the next intentional run.
+            $this->stopSignal->clear($book->id);
         } finally {
             $this->usage->flush($book->id);
         }

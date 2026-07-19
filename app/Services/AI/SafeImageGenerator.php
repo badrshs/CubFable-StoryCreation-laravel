@@ -5,8 +5,10 @@ namespace App\Services\AI;
 use App\Exceptions\ImageContentRejectedException;
 use App\Exceptions\ImageFlaggedSensitiveException;
 use App\Models\ImagePrompt;
+use App\Services\BookStopSignal;
 use App\Services\Prompts\SafetyPrompts;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -40,6 +42,7 @@ class SafeImageGenerator
         private PromptSanitizer $sanitizer,
         private SafetyPrompts $prompts,
         private FallbackEngines $fallbacks,
+        private BookStopSignal $stopSignal,
     ) {}
 
     /**
@@ -79,6 +82,12 @@ class SafeImageGenerator
                     $variant = $round === 1 ? 'original' : 'safe-rewrite';
 
                     for ($try = 1; $try <= self::TRANSIENT_TRIES; $try++) {
+                        // Without this, one image's full fallback walk (two
+                        // rounds x every engine x transient retries) grinds on
+                        // long after the admin pressed Stop; checking per
+                        // attempt makes a stop land within one attempt.
+                        $this->abortIfBookStopped($log);
+
                         $attempt++;
                         $journal = $this->journalAttempt($log, $attempt, $round, $variant, $effectivePrompt);
 
@@ -134,6 +143,18 @@ class SafeImageGenerator
         }
 
         throw $lastException;
+    }
+
+    /**
+     * Halt when the admin pressed Stop for the book this image belongs to.
+     * Same message the pipeline's own checkpoints use, so the run aborts
+     * identically wherever the stop lands.
+     */
+    private function abortIfBookStopped(?PromptLogContext $log): void
+    {
+        if ($log !== null && $this->stopSignal->requested($log->bookId)) {
+            throw new RuntimeException('Generation stopped by the admin.');
+        }
     }
 
     /**

@@ -124,6 +124,51 @@ class BookStopTest extends TestCase
         $this->assertSame(2, $book->pages()->where('status', PageStatus::Complete)->count());
     }
 
+    public function test_an_honored_stop_clears_the_signal_so_the_next_run_is_not_killed(): void
+    {
+        [, $book] = $this->pendingBookWithCast();
+
+        Http::fake(function (Request $request) use ($book) {
+            if (str_contains($request->url(), 'chat/completions')) {
+                app(BookStopSignal::class)->request($book->id);
+
+                return Http::response($this->storyChatResponse());
+            }
+
+            return Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]);
+        });
+
+        (new GenerateStorybookJob($book->id))->handle(app(StoryGenerator::class));
+
+        // The stop served its purpose; a lingering flag (1 hour TTL) would
+        // silently kill any regeneration queued within the hour.
+        $this->assertFalse(app(BookStopSignal::class)->requested($book->id));
+    }
+
+    public function test_an_aborting_run_does_not_clobber_a_book_requeued_by_restyle(): void
+    {
+        [, $book] = $this->pendingBookWithCast();
+
+        // Mid-run, the admin restyles: the book flips back to Pending and a
+        // new job is queued while the old pipeline is signalled to stop.
+        Http::fake(function (Request $request) use ($book) {
+            if (str_contains($request->url(), 'chat/completions')) {
+                app(BookStopSignal::class)->request($book->id);
+                Book::query()->whereKey($book->id)->update(['status' => BookStatus::Pending]);
+
+                return Http::response($this->storyChatResponse());
+            }
+
+            return Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]);
+        });
+
+        (new GenerateStorybookJob($book->id))->handle(app(StoryGenerator::class));
+
+        // The old run must not overwrite Pending with Failed, or the queued
+        // restyle job refuses to start and the book is stuck.
+        $this->assertSame(BookStatus::Pending, $book->refresh()->status);
+    }
+
     public function test_the_admin_stop_endpoint_sets_the_signal(): void
     {
         [, $book] = $this->pendingBookWithCast();
