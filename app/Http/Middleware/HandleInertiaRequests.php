@@ -42,7 +42,9 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
-            'registrationOpen' => Features::enabled(Features::registration()),
+            // Both gates must agree: the Fortify feature (env, fixed at boot)
+            // and the admin runtime setting, which can close registration live.
+            'registrationOpen' => Features::enabled(Features::registration()) && (bool) config('cubfable.registration_open'),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             // Whether character photos upload as the untouched original file
             // or a browser-side 768px downscale (admin runtime setting).

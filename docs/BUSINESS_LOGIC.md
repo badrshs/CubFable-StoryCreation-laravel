@@ -2,7 +2,7 @@
 
 > This document explains how CubFable works as a business and as a product, in plain language for non-technical readers. It contains no code. It is the single source of truth for "what the product does and why". It must be kept up to date whenever the product's behavior changes.
 >
-> Last updated: 2026-07-17
+> Last updated: 2026-07-19
 
 ---
 
@@ -152,10 +152,15 @@ Cover, half-title page, imprint/copyright page, a dedication page ("For [child's
 ## 6. Accounts and security
 
 - Registration is open by default but the admin can close it.
+- New accounts must confirm their email address by clicking a link sent to their inbox. Throwaway "disposable" email addresses (temporary inbox services) are rejected at sign-up. Accounts that existed before this rule are treated as already confirmed.
 - Sign-in supports email and password, optional two-factor authentication, and passkeys.
 - Only two roles exist: customer and admin (a flag on the user account).
 - A customer can only see their own books, characters, and orders. Someone else's book behaves as if it does not exist.
 - Payments can only be confirmed by trusted signals (Stripe's verified notification or a direct server-side check with Stripe), never by anything the browser claims.
+
+### Fair use of free perks
+
+The site quietly keeps track of which devices and network addresses each signed-in account uses, and notices when an address belongs to a VPN or a hosting provider rather than a home connection. Nothing is ever blocked and no one sees an error because of this: its only purpose is fairness when something is given away for free. When a free perk (such as a planned free demo book) is offered, each household gets it once; a person who makes a second account on the same device or network, or who shows up through a VPN, is simply shown the normal payment option instead of the free offer. Buying is always possible for everyone, from anywhere.
 
 ---
 

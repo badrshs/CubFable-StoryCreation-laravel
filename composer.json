@@ -18,6 +18,7 @@
         "laravel/tinker": "^3.0",
         "laravel/wayfinder": "^0.1.14",
         "league/flysystem-aws-s3-v3": "^3.35",
+        "propaganistas/laravel-disposable-email": "^2.5",
         "stripe/stripe-php": "^20.3",
         "tecnickcom/tcpdf": "6.10"
     },

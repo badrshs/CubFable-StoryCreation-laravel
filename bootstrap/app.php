@@ -3,6 +3,7 @@
 use App\Http\Middleware\EnsureUserIsAdmin;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\RecordDeviceIdentity;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -21,7 +22,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // detects HTTPS and generates https:// asset URLs instead of mixed content.
         $middleware->trustProxies(at: '*');
 
-        $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
+        // cf_fp is written by client-side JavaScript (the browser fingerprint),
+        // so it arrives unencrypted and must be exempt or the server reads null.
+        $middleware->encryptCookies(except: ['appearance', 'sidebar_state', 'cf_fp']);
 
         $middleware->preventRequestForgery(except: ['webhooks/stripe']);
 
@@ -29,6 +32,7 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
+            RecordDeviceIdentity::class,
         ]);
 
         $middleware->alias([

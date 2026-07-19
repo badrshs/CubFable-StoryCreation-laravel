@@ -8,6 +8,7 @@ import AppLayout from '@/layouts/app-layout';
 import AuthLayout from '@/layouts/auth-layout';
 import CubFableLayout from '@/layouts/cubfable-layout';
 import SettingsLayout from '@/layouts/settings/layout';
+import { ensureDeviceFingerprint } from '@/lib/device-fingerprint';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -45,3 +46,6 @@ createInertiaApp({
 
 // This will set light / dark mode on load...
 initializeTheme();
+
+// Best-effort browser fingerprint for the anti-abuse identity ledger.
+ensureDeviceFingerprint();

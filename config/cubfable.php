@@ -96,6 +96,53 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Abuse protection
+    |--------------------------------------------------------------------------
+    |
+    | Device/IP identity recording and free-benefit gating. Accounts sharing
+    | a device cookie, browser fingerprint, or recent IP are treated as one
+    | household when handing out free benefits; nothing is ever blocked, the
+    | worst case is being routed to the payment page instead of a freebie.
+    |
+    */
+
+    'abuse' => [
+        /*
+         * How long an IP overlap keeps counting as "same household" when
+         * checking benefit grants. IPs are shared (families, offices,
+         * carriers), so old overlaps must expire.
+         */
+        'ip_window_days' => (int) env('ABUSE_IP_WINDOW_DAYS', 30),
+
+        /*
+         * Minimum minutes between identity writes for the same user+device,
+         * so the middleware does not hit the database on every request.
+         */
+        'record_throttle_minutes' => (int) env('ABUSE_RECORD_THROTTLE_MINUTES', 10),
+
+        /*
+         * Cookie names: cf_did is the server-issued long-lived device id
+         * (httpOnly, encrypted); cf_fp is the client-computed browser
+         * fingerprint (JS-set, exempt from cookie encryption).
+         */
+        'device_cookie' => 'cf_did',
+        'fingerprint_cookie' => 'cf_fp',
+
+        /*
+         * Free CIDR lists used to flag VPN and datacenter IPs (X4BNet
+         * lists_vpn project), downloaded by abuse:update-ip-lists into
+         * storage/app/{path}. Flags are informational until a caller
+         * consults them; missing lists mean "unknown", never an error.
+         */
+        'ip_lists' => [
+            'path' => 'abuse',
+            'vpn_url' => (string) env('ABUSE_VPN_LIST_URL', 'https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/vpn/ipv4.txt'),
+            'datacenter_url' => (string) env('ABUSE_DATACENTER_LIST_URL', 'https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/datacenter/ipv4.txt'),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Page limits
     |--------------------------------------------------------------------------
     |
