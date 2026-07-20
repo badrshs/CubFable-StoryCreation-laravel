@@ -174,6 +174,9 @@ class AdminImageVersionsTest extends TestCase
     {
         Queue::fake();
         [$book] = $this->bookWithImages();
+        // A known stored style so the "one-off does not change the book" check
+        // is deterministic regardless of the factory's random default.
+        $book->update(['art_style' => 'storybook']);
 
         $this->actingAs($this->admin())
             ->post("/admin/books/{$book->id}/images/regenerate", [
@@ -187,7 +190,7 @@ class AdminImageVersionsTest extends TestCase
         Queue::assertPushed(RegeneratePageJob::class, fn (RegeneratePageJob $job): bool => $job->artStyle === 'watercolor');
 
         // The book's own style is never touched by a one-off regeneration.
-        $this->assertNotSame('watercolor', $book->refresh()->art_style);
+        $this->assertSame('storybook', $book->refresh()->art_style);
 
         // An unknown style is rejected.
         $this->actingAs($this->admin())
@@ -202,6 +205,9 @@ class AdminImageVersionsTest extends TestCase
         config()->set('cubfable.ai.keys.openai', 'test-key');
 
         [$book, $page] = $this->bookWithImages();
+        // A known stored style, distinct from the override, so the assertion
+        // is deterministic regardless of the factory's random default.
+        $book->update(['art_style' => 'storybook']);
         $book->characters()->attach(
             Character::factory()->for($book->user)->create([
                 'name' => 'Mia',
@@ -209,7 +215,6 @@ class AdminImageVersionsTest extends TestCase
             ])->id,
             ['is_main' => true, 'sort_order' => 0],
         );
-        $originalStyle = $book->art_style;
 
         Http::fake([
             'api.openai.com/*' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
@@ -218,10 +223,9 @@ class AdminImageVersionsTest extends TestCase
         (new RegeneratePageJob($page->id, null, null, 'watercolor'))
             ->handle(app(StoryGenerator::class), app(BookStopSignal::class));
 
-        // The version records the image that was produced under the override;
-        // the book's stored style is unchanged.
-        $this->assertSame($originalStyle, $book->refresh()->art_style);
-        $this->assertNotSame('watercolor', $book->art_style);
+        // The one-off override drew this image in watercolor, but the book's
+        // stored style is never changed.
+        $this->assertSame('storybook', $book->refresh()->art_style);
     }
 
     public function test_the_override_reconfigures_the_engine_for_that_job_only(): void

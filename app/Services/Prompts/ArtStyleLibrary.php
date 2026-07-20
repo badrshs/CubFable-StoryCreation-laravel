@@ -56,7 +56,10 @@ class ArtStyleLibrary
             'descriptor' => 'true watercolor on cold-press paper: loose wet-on-wet washes with blooming pigment edges and granulation, the white of the paper breathing through highlights, a fine light pencil underdrawing peeking through, airy luminous palette, spontaneous hand-painted charm',
             'antiDrift' => [
                 'Everything stays watercolor: translucent washes, soft blooms, paper texture showing through.',
-                'No digital-smooth gradients, no 3D rendering, no heavy opaque paint.',
+                // Positive texture instructions beat negations on models that
+                // parse "no ..." weakly (e.g. Seedream), which otherwise render
+                // a clean, digital-smooth version under a watercolor prompt.
+                'Matte, grainy finish with visible cold-press paper tooth; ragged, feathered, deckled edges; backruns and cauliflower blooms; dry-brush scumbling; colours sit in translucent layers, never opaque.',
             ],
             'reinforcement' => 'One artist painted the whole scene in the same watercolor session: same washes, same paper, same light touch.',
             'adaptation' => 'The reference photos only show who each character is: paint that person as a brand-new watercolor character in loose translucent washes - never photographic, and dressed to fit the scene, never in the clothes from the photo.',
