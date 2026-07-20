@@ -1,6 +1,7 @@
 // Components
-import { Form, Head } from '@inertiajs/react';
+import { Form, Head, usePage } from '@inertiajs/react';
 import { LoaderCircle } from 'lucide-react';
+import { useState } from 'react';
 import InputError from '@/components/input-error';
 import TextLink from '@/components/text-link';
 import TurnstileWidget from '@/components/turnstile-widget';
@@ -12,6 +13,11 @@ import { login } from '@/routes';
 import { email } from '@/routes/password';
 
 export default function ForgotPassword({ status }: { status?: string }) {
+    const { turnstileSiteKey } = usePage().props;
+    // With Turnstile on, block submission until the token exists so the form
+    // can never post tokenless and bounce off the server check.
+    const [botChecked, setBotChecked] = useState(!turnstileSiteKey);
+
     return (
         <>
             <Head title="Forgot password" />
@@ -41,7 +47,10 @@ export default function ForgotPassword({ status }: { status?: string }) {
                             </div>
 
                             <div className="mt-4">
-                                <TurnstileWidget error={errors.turnstile} />
+                                <TurnstileWidget
+                                    error={errors.turnstile}
+                                    onTokenChange={setBotChecked}
+                                />
                             </div>
 
                             <div className="my-6 flex items-center justify-start">
@@ -49,7 +58,7 @@ export default function ForgotPassword({ status }: { status?: string }) {
                                     variant="gold"
                                     size="lg"
                                     className="w-full rounded-full"
-                                    disabled={processing}
+                                    disabled={processing || !botChecked}
                                     data-test="email-password-reset-link-button"
                                 >
                                     {processing && (

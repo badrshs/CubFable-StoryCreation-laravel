@@ -1,4 +1,6 @@
 {
+  "turnstile.checking": "نتحقق من أنك إنسان...",
+  "turnstile.failed": "تعذر تحميل فحص الأمان. يرجى تحديث الصفحة.",
   "verify.banner": "يرجى تأكيد بريدك الإلكتروني. ستبقى بعض الميزات مخفية حتى تقوم بذلك.",
   "verify.bannerCta": "تأكيد الآن",
   "auth.registrationClosed": "التسجيل مغلق حاليًا.",

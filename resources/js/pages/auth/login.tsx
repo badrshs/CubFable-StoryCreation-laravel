@@ -1,11 +1,12 @@
 import { Form, Head, Link, setLayoutProps, usePage } from '@inertiajs/react';
 import { AlertCircle, LogIn } from 'lucide-react';
+import { useState } from 'react';
 import InputError from '@/components/input-error';
 import PasskeyVerify from '@/components/passkey-verify';
 import PasswordInput from '@/components/password-input';
+import TurnstileWidget from '@/components/turnstile-widget';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import TurnstileWidget from '@/components/turnstile-widget';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useI18n } from '@/i18n';
@@ -24,7 +25,10 @@ const linkClass =
 
 export default function Login({ status, canResetPassword }: Props) {
     const { t, tc } = useI18n();
-    const { registrationOpen } = usePage().props;
+    const { registrationOpen, turnstileSiteKey } = usePage().props;
+    // With Turnstile on, block submission until the token exists so the form
+    // can never post tokenless and bounce off the server check.
+    const [botChecked, setBotChecked] = useState(!turnstileSiteKey);
 
     setLayoutProps<AuthLayoutProps>({
         eyebrow: t('auth.login'),
@@ -109,7 +113,10 @@ export default function Login({ status, canResetPassword }: Props) {
                             </Label>
                         </div>
 
-                        <TurnstileWidget error={errors.turnstile} />
+                        <TurnstileWidget
+                            error={errors.turnstile}
+                            onTokenChange={setBotChecked}
+                        />
 
                         <div aria-live="polite" className="min-h-[1.25rem]">
                             {errors.email && (
@@ -131,7 +138,7 @@ export default function Login({ status, canResetPassword }: Props) {
                             variant="gold"
                             size="lg"
                             className="rounded-full"
-                            disabled={processing}
+                            disabled={processing || !botChecked}
                             data-test="login-button"
                         >
                             {processing ? (

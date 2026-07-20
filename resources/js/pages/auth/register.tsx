@@ -1,5 +1,6 @@
 import { Form, Head, Link, setLayoutProps, usePage } from '@inertiajs/react';
 import { MoonStar, Sparkles } from 'lucide-react';
+import { useState } from 'react';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
 import TurnstileWidget from '@/components/turnstile-widget';
@@ -20,7 +21,10 @@ const linkClass =
 
 export default function Register({ passwordRules }: Props) {
     const { t, tc } = useI18n();
-    const { registrationOpen } = usePage().props;
+    const { registrationOpen, turnstileSiteKey } = usePage().props;
+    // With Turnstile on, block submission until the token exists so the form
+    // can never post tokenless and bounce off the server check.
+    const [botChecked, setBotChecked] = useState(!turnstileSiteKey);
 
     setLayoutProps<AuthLayoutProps>({
         eyebrow: t('auth.register'),
@@ -129,14 +133,17 @@ export default function Register({ passwordRules }: Props) {
                                 />
                             </div>
 
-                            <TurnstileWidget error={errors.turnstile} />
+                            <TurnstileWidget
+                                error={errors.turnstile}
+                                onTokenChange={setBotChecked}
+                            />
 
                             <Button
                                 type="submit"
                                 variant="gold"
                                 size="lg"
                                 className="rounded-full"
-                                disabled={processing}
+                                disabled={processing || !botChecked}
                                 data-test="register-user-button"
                             >
                                 {processing ? (

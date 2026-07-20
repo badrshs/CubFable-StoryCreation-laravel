@@ -1,4 +1,6 @@
 {
+  "turnstile.checking": "Checking that you're human...",
+  "turnstile.failed": "The security check could not load. Please refresh the page.",
   "verify.banner": "Please verify your email address. Some features stay hidden until you do.",
   "verify.bannerCta": "Verify now",
   "auth.registrationClosed": "Registration is currently closed.",

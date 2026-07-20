@@ -1,4 +1,6 @@
 {
+  "turnstile.checking": "Comprobando que eres humano...",
+  "turnstile.failed": "No se pudo cargar la verificación de seguridad. Actualiza la página.",
   "verify.banner": "Por favor, verifica tu correo electrónico. Algunas funciones permanecerán ocultas hasta que lo hagas.",
   "verify.bannerCta": "Verificar ahora",
   "auth.registrationClosed": "El registro está cerrado por el momento.",

@@ -1,6 +1,8 @@
 import { usePage } from '@inertiajs/react';
+import { LoaderCircle } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import InputError from '@/components/input-error';
+import { useT } from '@/i18n';
 
 declare global {
     interface Window {
@@ -44,12 +46,28 @@ function loadTurnstileScript(): Promise<void> {
 /**
  * Cloudflare Turnstile bot check for auth forms. Renders nothing when no
  * site key is configured (the server skips validation too). The token lands
- * in a hidden cf-turnstile-response input picked up on form submit.
+ * in a hidden cf-turnstile-response input picked up on form submit, and
+ * onTokenChange lets the form disable its submit button until the check has
+ * finished, so nobody can post without a token and hit a server error.
  */
-export default function TurnstileWidget({ error }: { error?: string }) {
+export default function TurnstileWidget({
+    error,
+    onTokenChange,
+}: {
+    error?: string;
+    onTokenChange?: (hasToken: boolean) => void;
+}) {
+    const t = useT();
     const { turnstileSiteKey } = usePage().props;
     const containerRef = useRef<HTMLDivElement>(null);
     const [token, setToken] = useState('');
+    const [loadFailed, setLoadFailed] = useState(false);
+
+    useEffect(() => {
+        if (turnstileSiteKey) {
+            onTokenChange?.(token !== '');
+        }
+    }, [token, turnstileSiteKey, onTokenChange]);
 
     useEffect(() => {
         if (!turnstileSiteKey || !containerRef.current) {
@@ -74,8 +92,9 @@ export default function TurnstileWidget({ error }: { error?: string }) {
                 });
             })
             .catch(() => {
-                // Widget stays hidden; the server decides what to do with a
-                // missing token.
+                if (!cancelled) {
+                    setLoadFailed(true);
+                }
             });
 
         return () => {
@@ -95,6 +114,20 @@ export default function TurnstileWidget({ error }: { error?: string }) {
         <div className="flex flex-col gap-1.5">
             <div ref={containerRef} />
             <input type="hidden" name="cf-turnstile-response" value={token} />
+            {token === '' && !loadFailed && (
+                <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <LoaderCircle
+                        className="h-3.5 w-3.5 animate-spin"
+                        aria-hidden
+                    />
+                    {t('turnstile.checking')}
+                </p>
+            )}
+            {loadFailed && (
+                <p className="text-xs text-destructive" role="alert">
+                    {t('turnstile.failed')}
+                </p>
+            )}
             <InputError message={error} />
         </div>
     );

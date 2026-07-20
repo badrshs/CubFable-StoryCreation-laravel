@@ -1,4 +1,6 @@
 {
+  "turnstile.checking": "İnsan olduğunuzu kontrol ediyoruz...",
+  "turnstile.failed": "Güvenlik doğrulaması yüklenemedi. Lütfen sayfayı yenileyin.",
   "verify.banner": "Lütfen e-posta adresinizi doğrulayın. Bazı özellikler doğrulayana kadar gizli kalır.",
   "verify.bannerCta": "Şimdi doğrula",
   "auth.registrationClosed": "Kayıtlar şu anda kapalı.",

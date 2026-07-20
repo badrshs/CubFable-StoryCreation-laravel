@@ -13,13 +13,20 @@ class OpenRouterProvider implements AiProvider
 {
     private const URL = 'https://openrouter.ai/api/v1/chat/completions';
 
+    /**
+     * The story blueprint is one long completion, and slow reasoning models
+     * (deepseek-v4-pro takes ~3 minutes) were brushing against the previous
+     * 180s ceiling, failing runs intermittently with cURL timeouts.
+     */
+    private const TEXT_TIMEOUT_SECONDS = 600;
+
     public function __construct(private UsageCollector $usage) {}
 
     public function text(string $prompt, int $maxTokens): string
     {
         $model = (string) config('cubfable.ai.models.text.openrouter');
 
-        $response = Http::timeout(180)->withHeaders($this->headers())->post(self::URL, [
+        $response = Http::timeout(self::TEXT_TIMEOUT_SECONDS)->withHeaders($this->headers())->post(self::URL, [
             'model' => $model,
             'messages' => [['role' => 'user', 'content' => $prompt]],
             'usage' => ['include' => true],
