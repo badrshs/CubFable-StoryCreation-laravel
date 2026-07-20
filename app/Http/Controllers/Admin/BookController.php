@@ -231,20 +231,25 @@ class BookController extends Controller
             'target' => ['required', 'string', 'regex:/^(cover|page-\d+)$/'],
             'provider' => ['nullable', 'in:openai,gemini,openrouter,flow,grok,piapi,replicate'],
             'model' => ['nullable', 'string', 'max:200'],
+            // A one-off style for this single image only; the book keeps its
+            // stored style and every other image is untouched.
+            'artStyle' => ['nullable', Rule::enum(ArtStyle::class)],
         ]);
 
         $provider = $validated['provider'] ?? null;
         $model = $validated['model'] ?? null;
+        $artStyle = $validated['artStyle'] ?? null;
 
         Log::info("Admin queued a regeneration of {$validated['target']}.", array_filter([
             'book_id' => $book->id,
             'provider' => $provider,
             'model' => $model,
+            'art_style' => $artStyle,
         ]));
 
         if ($validated['target'] === 'cover') {
             $book->update(['cover_status' => 'generating']);
-            RegenerateCoverJob::dispatch($book->id, $provider, $model);
+            RegenerateCoverJob::dispatch($book->id, $provider, $model, $artStyle);
 
             return back();
         }
@@ -253,7 +258,7 @@ class BookController extends Controller
         $page = $book->pages()->where('page_number', $pageNumber)->firstOrFail();
 
         $page->update(['status' => PageStatus::Generating]);
-        RegeneratePageJob::dispatch($page->id, $provider, $model);
+        RegeneratePageJob::dispatch($page->id, $provider, $model, $artStyle);
 
         return back();
     }

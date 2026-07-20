@@ -38,6 +38,15 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import {
     Select,
     SelectContent,
     SelectItem,
@@ -150,37 +159,6 @@ function JournalRow({ entry }: { entry: JournalEntry }) {
 }
 
 type GalleryItem = { url: string; caption: string; prompt?: string };
-
-// Per-run engine choices for the regenerate buttons: 'default' follows the
-// stored settings; anything else overrides provider (and model) for that one
-// job only. The Replicate catalog engines are appended from the server so
-// every choice names the exact model it runs.
-type EngineChoice = {
-    value: string;
-    label: string;
-    provider?: string;
-    model?: string;
-};
-
-const STATIC_ENGINE_OVERRIDES: EngineChoice[] = [
-    { value: 'piapi', label: 'PiAPI Flux Kontext', provider: 'piapi' },
-    {
-        value: 'flow-grok',
-        label: 'Browser Grok Imagine',
-        provider: 'flow',
-        model: 'grok-imagine',
-    },
-    {
-        value: 'flow-google',
-        label: 'Browser Google Flow',
-        provider: 'flow',
-        model: 'google-flow',
-    },
-    { value: 'grok', label: 'xAI Grok API', provider: 'grok' },
-    { value: 'openai', label: 'OpenAI', provider: 'openai' },
-    { value: 'gemini', label: 'Gemini', provider: 'gemini' },
-    { value: 'openrouter', label: 'OpenRouter', provider: 'openrouter' },
-];
 
 /**
  * Full-screen viewer for the book's images: click-through with prev/next
@@ -313,11 +291,43 @@ export default function AdminBookShow({
 }: Props) {
     const { errors } = usePage().props as { errors: Record<string, string> };
     const [restyleTo, setRestyleTo] = useState(book.artStyle);
-    const [engine, setEngine] = useState('default');
     const [lightbox, setLightbox] = useState<{
         items: GalleryItem[];
         index: number;
     } | null>(null);
+
+    // The single regenerate popup: which image is being regenerated, plus the
+    // one-off art style and Replicate model chosen for it. Both default to
+    // "as the book is now" / "current settings". Replicate models only.
+    const [regenTarget, setRegenTarget] = useState<string | null>(null);
+    const [regenStyle, setRegenStyle] = useState(book.artStyle);
+    const [regenModel, setRegenModel] = useState('default');
+
+    const replicateModels = engines.replicate ?? [];
+
+    const openRegenerate = (target: string) => {
+        setRegenStyle(book.artStyle);
+        setRegenModel('default');
+        setRegenTarget(target);
+    };
+
+    const submitRegenerate = () => {
+        if (regenTarget === null) {
+            return;
+        }
+
+        const chosen = replicateModels.find((m) => m.model === regenModel);
+
+        act('images/regenerate', {
+            target: regenTarget,
+            ...(chosen
+                ? { provider: chosen.provider, model: chosen.model }
+                : {}),
+            ...(regenStyle !== book.artStyle ? { artStyle: regenStyle } : {}),
+        });
+
+        setRegenTarget(null);
+    };
 
     // One shared confirmation for every generation-triggering action, always
     // naming the exact engine + model that will run.
@@ -329,51 +339,6 @@ export default function AdminBookShow({
 
     // The engine label for the current stored settings.
     const settingsEngineLabel = `${engines.currentProvider} - ${engines.models[engines.currentProvider] ?? ''}`;
-
-    // Every selectable per-run engine: current settings first, then one
-    // entry per Replicate catalog engine (each sending its exact model),
-    // then the other providers.
-    const engineOverrides: EngineChoice[] = [
-        { value: 'default', label: 'Engine: current settings' },
-        ...(engines.replicate ?? []).map((option) => ({
-            value: `replicate:${option.model}`,
-            label: `Replicate ${option.label} (${option.cost})`,
-            provider: option.provider,
-            model: option.model,
-        })),
-        ...STATIC_ENGINE_OVERRIDES,
-    ];
-
-    // The engine label the regenerate buttons would use (dropdown override,
-    // the dedicated cover engine for the cover, or the stored settings).
-    const regenerateEngineLabel = (target: string): string => {
-        const choice = engineOverrides.find((e) => e.value === engine);
-
-        if (!choice?.provider) {
-            if (target === 'cover' && engines.coverProvider !== '') {
-                return `${engines.coverProvider} - ${engines.coverModel || engines.models[engines.coverProvider] || ''} (cover engine)`;
-            }
-
-            return settingsEngineLabel;
-        }
-
-        return `${choice.provider} - ${choice.model ?? engines.models[choice.provider] ?? ''}`;
-    };
-
-    const regenerate = (target: string) => {
-        const choice = engineOverrides.find((e) => e.value === engine);
-
-        setConfirmAction({
-            title: `Regenerate ${target}?`,
-            description: `A new ${target} image will be generated with ${regenerateEngineLabel(target)}. The current image stays available as a version.`,
-            run: () =>
-                act('images/regenerate', {
-                    target,
-                    ...(choice?.provider ? { provider: choice.provider } : {}),
-                    ...(choice?.model ? { model: choice.model } : {}),
-                }),
-        });
-    };
 
     // While anything is generating, keep the page fresh so status changes
     // (generating -> complete/failed) and new versions show up on their own.
@@ -670,26 +635,11 @@ export default function AdminBookShow({
                         <CardHeader>
                             <div className="flex flex-wrap items-center justify-between gap-2">
                                 <CardTitle>Pages</CardTitle>
-                                {/* Which engine the regenerate buttons use,
-                                    for this run only. */}
-                                <Select
-                                    value={engine}
-                                    onValueChange={setEngine}
-                                >
-                                    <SelectTrigger className="h-8 w-56">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {engineOverrides.map((choice) => (
-                                            <SelectItem
-                                                key={choice.value}
-                                                value={choice.value}
-                                            >
-                                                {choice.label}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                <CardDescription>
+                                    Click the refresh icon on any image to
+                                    regenerate it, choosing a style and Replicate
+                                    model just for that image.
+                                </CardDescription>
                             </div>
                         </CardHeader>
                         <CardContent>
@@ -724,7 +674,7 @@ export default function AdminBookShow({
                                                     'generating'
                                                 }
                                                 onClick={() =>
-                                                    regenerate('cover')
+                                                    openRegenerate('cover')
                                                 }
                                                 className="rounded p-0.5 text-gold hover:bg-gold/15 disabled:cursor-wait"
                                             >
@@ -771,7 +721,7 @@ export default function AdminBookShow({
                                                     page.status === 'generating'
                                                 }
                                                 onClick={() =>
-                                                    regenerate(
+                                                    openRegenerate(
                                                         `page-${page.pageNumber}`,
                                                     )
                                                 }
@@ -898,6 +848,94 @@ export default function AdminBookShow({
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Per-image regenerate: pick a one-off art style and Replicate
+                model for just this cover/page. */}
+            <Dialog
+                open={regenTarget !== null}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setRegenTarget(null);
+                    }
+                }}
+            >
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>
+                            Regenerate{' '}
+                            {regenTarget === 'cover'
+                                ? 'the cover'
+                                : regenTarget?.replace('page-', 'page ')}
+                        </DialogTitle>
+                        <DialogDescription>
+                            Only this image is regenerated. The book keeps its
+                            saved style, every other image is untouched, and the
+                            current image stays available as a version.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-2">
+                        <div className="space-y-1.5">
+                            <Label htmlFor="regen-style">Art style</Label>
+                            <Select
+                                value={regenStyle}
+                                onValueChange={setRegenStyle}
+                            >
+                                <SelectTrigger id="regen-style">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {artStyles.map((style) => (
+                                        <SelectItem key={style} value={style}>
+                                            {style}
+                                            {style === book.artStyle
+                                                ? ' (book style)'
+                                                : ''}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <Label htmlFor="regen-model">Replicate model</Label>
+                            <Select
+                                value={regenModel}
+                                onValueChange={setRegenModel}
+                            >
+                                <SelectTrigger id="regen-model">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="default">
+                                        Current settings ({settingsEngineLabel})
+                                    </SelectItem>
+                                    {replicateModels.map((option) => (
+                                        <SelectItem
+                                            key={option.model}
+                                            value={option.model}
+                                        >
+                                            {option.label} ({option.cost})
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => setRegenTarget(null)}
+                        >
+                            Cancel
+                        </Button>
+                        <Button variant="gold" onClick={submitRegenerate}>
+                            <RotateCcw className="h-4 w-4" /> Generate
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* The shared "are you sure, with THIS engine" gate for every
                 generation-triggering action. */}

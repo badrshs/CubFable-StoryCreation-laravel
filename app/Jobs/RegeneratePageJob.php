@@ -28,13 +28,14 @@ class RegeneratePageJob implements ShouldQueue
     public int $tries = 1;
 
     /**
-     * Create a new job instance. An optional engine override applies to this
-     * run only (the worker boots fresh per job, so nothing leaks).
+     * Create a new job instance. Optional engine and art-style overrides apply
+     * to this run only (the worker boots fresh per job, so nothing leaks).
      */
     public function __construct(
         public int $pageId,
         public ?string $imageProvider = null,
         public ?string $imageModel = null,
+        public ?string $artStyle = null,
     ) {}
 
     /**
@@ -61,6 +62,7 @@ class RegeneratePageJob implements ShouldQueue
         Context::add('book_id', $book->id);
         Log::info("Regenerating the illustration of page {$page->page_number}.");
         EngineOverride::apply($this->imageProvider, $this->imageModel);
+        StyleOverride::apply($this->artStyle);
 
         $generator->regeneratePageIllustration($page, $book);
     }

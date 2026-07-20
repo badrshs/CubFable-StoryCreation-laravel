@@ -170,6 +170,60 @@ class AdminImageVersionsTest extends TestCase
             ->assertSessionHasErrors('provider');
     }
 
+    public function test_a_one_off_style_travels_with_the_regeneration_job(): void
+    {
+        Queue::fake();
+        [$book] = $this->bookWithImages();
+
+        $this->actingAs($this->admin())
+            ->post("/admin/books/{$book->id}/images/regenerate", [
+                'target' => 'page-1',
+                'provider' => 'replicate',
+                'model' => 'bytedance/seedream-4.5',
+                'artStyle' => 'watercolor',
+            ])
+            ->assertRedirect();
+
+        Queue::assertPushed(RegeneratePageJob::class, fn (RegeneratePageJob $job): bool => $job->artStyle === 'watercolor');
+
+        // The book's own style is never touched by a one-off regeneration.
+        $this->assertNotSame('watercolor', $book->refresh()->art_style);
+
+        // An unknown style is rejected.
+        $this->actingAs($this->admin())
+            ->from("/admin/books/{$book->id}")
+            ->post("/admin/books/{$book->id}/images/regenerate", ['target' => 'cover', 'artStyle' => 'not-a-style'])
+            ->assertSessionHasErrors('artStyle');
+    }
+
+    public function test_the_style_override_reaches_the_prompt_composer_without_saving_the_book(): void
+    {
+        config()->set('cubfable.ai.image_provider', 'openai');
+        config()->set('cubfable.ai.keys.openai', 'test-key');
+
+        [$book, $page] = $this->bookWithImages();
+        $book->characters()->attach(
+            Character::factory()->for($book->user)->create([
+                'name' => 'Mia',
+                'appearance' => 'Short curly brown hair, yellow raincoat.',
+            ])->id,
+            ['is_main' => true, 'sort_order' => 0],
+        );
+        $originalStyle = $book->art_style;
+
+        Http::fake([
+            'api.openai.com/*' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+        ]);
+
+        (new RegeneratePageJob($page->id, null, null, 'watercolor'))
+            ->handle(app(StoryGenerator::class), app(BookStopSignal::class));
+
+        // The version records the image that was produced under the override;
+        // the book's stored style is unchanged.
+        $this->assertSame($originalStyle, $book->refresh()->art_style);
+        $this->assertNotSame('watercolor', $book->art_style);
+    }
+
     public function test_the_override_reconfigures_the_engine_for_that_job_only(): void
     {
         EngineOverride::apply('replicate', 'some/custom-model');

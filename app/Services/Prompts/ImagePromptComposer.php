@@ -38,6 +38,18 @@ class ImagePromptComposer
     ) {}
 
     /**
+     * The art style to draw in. A per-run override (set by an admin testing a
+     * single image in a different style) wins over the book's stored style,
+     * for this generation only - the book itself is never changed.
+     */
+    private function styleKey(Book $book): string
+    {
+        $override = (string) config('cubfable.ai.style_override', '');
+
+        return $override !== '' ? $override : $book->art_style;
+    }
+
+    /**
      * The character-sheet prompt and references: one canonical stylized
      * rendition of the hero that anchors the cover and every page.
      *
@@ -45,7 +57,7 @@ class ImagePromptComposer
      */
     public function sheet(Book $book, Character $main): array
     {
-        $artStyle = $this->styles->descriptor($book->art_style);
+        $artStyle = $this->styles->descriptor($this->styleKey($book));
         $usePhoto = $this->policy->hasUsablePhoto($main);
         $references = $usePhoto ? [new ImageReference((string) $main->photo_path, $main->name)] : [];
 
@@ -56,7 +68,7 @@ class ImagePromptComposer
             ? $this->identity->referenceLine($main->name, 1, null, $main->age_group)
             : ($appearance !== '' ? $this->identity->descriptionLine($main->name, $main->appearance, null, $main->age_group) : '');
 
-        $constraints = $this->constraintsBlock($book->art_style, $references !== [], [
+        $constraints = $this->constraintsBlock($this->styleKey($book), $references !== [], [
             "Only {$main->name} in the frame, large and clear.",
             'No text, letters, numbers, watermarks or logos in the image.',
         ]);
@@ -84,7 +96,7 @@ PROMPT;
      */
     public function cover(Book $book, Character $main, ?ImageReference $anchor = null): array
     {
-        $artStyle = $this->styles->descriptor($book->art_style);
+        $artStyle = $this->styles->descriptor($this->styleKey($book));
         $bible = $book->story_bible ?? [];
         $bibleSubtitle = PromptText::line($bible['subtitle'] ?? null, 60);
         $coverSubtitle = $bibleSubtitle ?? (self::COVER_SUBTITLES[$book->theme] ?? 'A Magical Adventure');
@@ -123,7 +135,7 @@ PROMPT;
             ? "\nHide {$motif} somewhere in the artwork."
             : '';
 
-        $constraints = $this->constraintsBlock($book->art_style, $coverReferences !== [], [
+        $constraints = $this->constraintsBlock($this->styleKey($book), $coverReferences !== [], [
             'The artwork fills the whole canvas edge to edge: no borders, no frames, no margins.',
             'Flat cover artwork only, never a photo or mockup of a physical book: no spine, no page edges, no shadow or surface behind the cover.',
             'No words or letters in the artwork beyond the two title lines above.',
@@ -158,7 +170,7 @@ PROMPT;
      */
     public function page(Book $book, Page $page, Collection $cast, Character $main, ?ImageReference $anchor = null): array
     {
-        $artStyle = $this->styles->descriptor($book->art_style);
+        $artStyle = $this->styles->descriptor($this->styleKey($book));
         $pageNumberLabel = "page {$page->page_number}";
         $sceneText = ($page->scene ?? '') !== '' ? (string) $page->scene : $page->text;
         $matchText = ($page->scene ?? '').' '.$page->text;
@@ -211,7 +223,7 @@ PROMPT;
         $characterLines = implode("\n", $lines);
         $sceneBlock = $this->sceneBlock($book, $page, $direction, $bible, $sceneText);
 
-        $constraints = $this->constraintsBlock($book->art_style, $references !== [], [
+        $constraints = $this->constraintsBlock($this->styleKey($book), $references !== [], [
             'No text, letters, numbers, watermarks or logos in the image.',
             'Every character is part of the scene: mid-action, interacting with the setting, never stiffly posed like a photograph.',
         ]);
@@ -273,7 +285,7 @@ PROMPT;
      */
     public function pageGroup(Book $book, array $pages, Collection $cast, Character $main, ?ImageReference $anchor = null, ?ImageReference $styleAnchor = null): array
     {
-        $artStyle = $this->styles->descriptor($book->art_style);
+        $artStyle = $this->styles->descriptor($this->styleKey($book));
         $bible = $book->story_bible ?? [];
         $count = count($pages);
 
@@ -332,7 +344,7 @@ PROMPT;
             $targetRules[] = 'Reference image '.count($references).' is a finished page of this same book: match its style, palette and rendering exactly.';
         }
 
-        $constraints = $this->constraintsBlock($book->art_style, $references !== [], $targetRules);
+        $constraints = $this->constraintsBlock($this->styleKey($book), $references !== [], $targetRules);
 
         // Engines cap the prompt (Seedream: 4000 chars). Verbose author
         // scenes are clipped progressively tighter until the set fits;
