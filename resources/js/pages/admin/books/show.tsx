@@ -160,6 +160,20 @@ function JournalRow({ entry }: { entry: JournalEntry }) {
 
 type GalleryItem = { url: string; caption: string; prompt?: string };
 
+// Remember the last style + Replicate model chosen in the regenerate popup,
+// so testing several models on the same story does not mean re-picking every
+// time. Shared across books on purpose (it is a testing preference).
+const REGEN_STYLE_KEY = 'cubfable.admin.regen.style';
+const REGEN_MODEL_KEY = 'cubfable.admin.regen.model';
+
+function readStored(key: string): string | null {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+
+    return window.localStorage.getItem(key);
+}
+
 /**
  * Full-screen viewer for the book's images: click-through with prev/next
  * buttons, arrow keys and Escape.
@@ -306,14 +320,35 @@ export default function AdminBookShow({
     const replicateModels = engines.replicate ?? [];
 
     const openRegenerate = (target: string) => {
-        setRegenStyle(book.artStyle);
-        setRegenModel('default');
+        // Preselect the last choice when it is still valid, else the defaults
+        // (the book's own style / current engine settings).
+        const savedStyle = readStored(REGEN_STYLE_KEY);
+        const savedModel = readStored(REGEN_MODEL_KEY);
+
+        setRegenStyle(
+            savedStyle && artStyles.includes(savedStyle)
+                ? savedStyle
+                : book.artStyle,
+        );
+        setRegenModel(
+            savedModel === 'default' ||
+                (savedModel !== null &&
+                    replicateModels.some((m) => m.model === savedModel))
+                ? (savedModel as string)
+                : 'default',
+        );
         setRegenTarget(target);
     };
 
     const submitRegenerate = () => {
         if (regenTarget === null) {
             return;
+        }
+
+        // Remember this choice for the next popup.
+        if (typeof window !== 'undefined') {
+            window.localStorage.setItem(REGEN_STYLE_KEY, regenStyle);
+            window.localStorage.setItem(REGEN_MODEL_KEY, regenModel);
         }
 
         const chosen = replicateModels.find((m) => m.model === regenModel);
