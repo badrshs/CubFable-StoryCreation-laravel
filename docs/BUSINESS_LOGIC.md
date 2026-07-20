@@ -2,7 +2,7 @@
 
 > This document explains how CubFable works as a business and as a product, in plain language for non-technical readers. It contains no code. It is the single source of truth for "what the product does and why". It must be kept up to date whenever the product's behavior changes.
 >
-> Last updated: 2026-07-19
+> Last updated: 2026-07-20
 
 ---
 
@@ -66,10 +66,11 @@ All characters (the hero and the cast) are saved into the customer's reusable ch
 Submitting the wizard creates a **draft** book and sends the customer straight to checkout.
 
 - The price is a one-time fee per book (default **7.99 EUR**; the admin can change price and currency).
-- Payment is processed by Stripe. The price is always decided by the server, never by anything the customer's browser sends.
+- Payment is processed by one of two payment providers: Stripe (the default) or Paddle. The admin picks which one new checkouts use with a single setting; the checkout page adapts automatically. The price is always decided by the server, never by anything the customer's browser sends, regardless of provider.
 - **Nothing is generated before payment.** This is a hard business rule: no AI money is spent on a book that has not been paid for.
 - Unpaid drafts can be reopened, edited, or deleted by the customer. Once paid, a book becomes a locked keepsake.
-- Payment confirmation is designed to be bulletproof: even if Stripe's confirmation message arrives late, the site double-checks with Stripe directly when the customer opens their book, so a paying customer is never left locked out.
+- Payment confirmation is designed to be bulletproof: even if the provider's confirmation message arrives late, the site double-checks with the provider directly when the customer opens their book, so a paying customer is never left locked out.
+- Every order remembers which provider it was started with, so the admin can switch providers at any time without stranding a customer who is mid-payment: an in-flight payment still completes and unlocks the book on the provider it began on.
 
 ### Step E: The book is generated (automatically)
 The moment payment is confirmed, the book enters the generation pipeline (described in section 3). The customer can watch it happen live: the book page refreshes itself every few seconds, showing a status badge (Pending, Generating, Complete, Failed) and pages appearing one by one as the illustrations finish.
@@ -140,7 +141,7 @@ Cover, half-title page, imprint/copyright page, a dedication page ("For [child's
 
 ## 5. Money: pricing, payments, and cost control
 
-- **Revenue**: one-time payment per book, default 7.99 EUR (admin-configurable price and currency: EUR, USD, GBP, TRY). Stripe handles the payment.
+- **Revenue**: one-time payment per book, default 7.99 EUR (admin-configurable price and currency: EUR, USD, GBP, TRY). Payment is handled by Stripe or Paddle, whichever the admin has selected; both charge the same server-decided price.
 - **Costs**: every single AI call (story writing, vision, every image) is logged with its provider, model, tokens, and cost in USD. The admin dashboard shows total AI spend, spend per book, spend by model and by type of call, and the average AI cost of a completed book next to revenue. This is how the owner knows the margin per book.
 - **Hard cost rules**:
   - No AI generation ever happens before payment.
@@ -158,7 +159,7 @@ Cover, half-title page, imprint/copyright page, a dedication page ("For [child's
 - Sign-in supports email and password, optional two-factor authentication, and passkeys.
 - Only two roles exist: customer and admin (a flag on the user account).
 - A customer can only see their own books, characters, and orders. Someone else's book behaves as if it does not exist. Admins are the one exception: to support customers, an admin can open any book in the normal reader and use everything in it (edit page text, regenerate images, restyle, download the PDF).
-- Payments can only be confirmed by trusted signals (Stripe's verified notification or a direct server-side check with Stripe), never by anything the browser claims.
+- Payments can only be confirmed by trusted signals (the payment provider's verified notification or a direct server-side check with the provider), never by anything the browser claims. This holds for both Stripe and Paddle.
 
 ### Fair use of free perks
 
@@ -171,7 +172,7 @@ The site quietly keeps track of which devices and network addresses each signed-
 Admins have their own section of the site with:
 
 - **Dashboard**: revenue, AI spend, average cost per completed book, books by status, a 14-day trend of books created versus dollars spent, most popular art styles, and recent failures.
-- **Settings**: all the business knobs, changeable live without redeploying. Highlights: which AI provider and model writes the stories (OpenAI, Gemini, or OpenRouter); which of seven engines draws the images (OpenAI, Gemini, OpenRouter, Flow, Grok, PiAPI, Replicate) and with what model; image quality tier (standard/high/max); image aspect ratio (default 3:4 portrait); whether the hero's identity comes from a character sheet or the raw photo; a dedicated cover engine; page size and art layout for the PDF; per-language fonts; whether uploaded photos are kept at original quality or optimized to save cost; the book price and currency; whether registration is open; and the allowed page-count range for templates (default 4 to 10).
+- **Settings**: all the business knobs, changeable live without redeploying. Highlights: which AI provider and model writes the stories (OpenAI, Gemini, or OpenRouter); which of seven engines draws the images (OpenAI, Gemini, OpenRouter, Flow, Grok, PiAPI, Replicate) and with what model; image quality tier (standard/high/max); image aspect ratio (default 3:4 portrait); whether the hero's identity comes from a character sheet or the raw photo; a dedicated cover engine; page size and art layout for the PDF; per-language fonts; whether uploaded photos are kept at original quality or optimized to save cost; which payment provider new checkouts use (Stripe or Paddle); the book price and currency; whether registration is open; and the allowed page-count range for templates (default 4 to 10).
 - **Template management**: create and edit story templates (title, plot description, theme, age range, page count, allowed lessons/styles/subjects/fonts, and a cover art prompt), and generate real cover art for a template on demand. A template that already has customer books cannot be deleted.
 - **Book operations**: view every book with its exact AI cost, read the full journal of every prompt sent to the image engines, see the story bible, browse the version history of every image (and restore any older version), and run rescue actions: resume a stuck book, restart it from scratch, stop a running job safely, "heal" a book that actually finished but was not marked complete, regenerate a single cover or page (a popup lets the admin pick a one-off art style and a specific Replicate model just for that image, so different styles and models can be compared on the same story without changing the book or the other images), restyle a whole book, or delete it.
 - **Review queue (moderation)**: every cover or page that all engines refused as "sensitive" lands here. Each item shows the full attempt history (which round, which engine, which prompt variant, the exact provider error, when), the current image if one exists, and the page's scene wording. The admin can reword the scene, retry the image (optionally on a different engine), or dismiss the flag. The dashboard shows a live count.

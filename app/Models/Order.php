@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\OrderStatus;
+use App\Enums\PaymentProvider;
 use Database\Factories\OrderFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -14,7 +15,8 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $user_id
  * @property int $book_id
- * @property string $stripe_payment_intent_id
+ * @property PaymentProvider $provider
+ * @property string $provider_transaction_id
  * @property int $amount
  * @property string $currency
  * @property OrderStatus $status
@@ -25,7 +27,8 @@ use Illuminate\Support\Carbon;
 #[Fillable([
     'user_id',
     'book_id',
-    'stripe_payment_intent_id',
+    'provider',
+    'provider_transaction_id',
     'amount',
     'currency',
     'status',
@@ -42,6 +45,7 @@ class Order extends Model
      * @var array<string, mixed>
      */
     protected $attributes = [
+        'provider' => PaymentProvider::Stripe->value,
         'currency' => 'eur',
         'status' => OrderStatus::Pending->value,
     ];
@@ -54,6 +58,7 @@ class Order extends Model
     protected function casts(): array
     {
         return [
+            'provider' => PaymentProvider::class,
             'status' => OrderStatus::class,
             'paid_at' => 'datetime',
         ];

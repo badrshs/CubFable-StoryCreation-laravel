@@ -60,6 +60,7 @@ class AppSettings
         'pdf_font_ur' => ['path' => 'cubfable.pdf.fonts.ur', 'cast' => 'string'],
         'pdf_font_zh' => ['path' => 'cubfable.pdf.fonts.zh', 'cast' => 'string'],
         'photo_upload_quality' => ['path' => 'cubfable.uploads.photo_quality', 'cast' => 'string'],
+        'payment_provider' => ['path' => 'cubfable.payment_provider', 'cast' => 'string'],
         'price_cents' => ['path' => 'cubfable.price_cents', 'cast' => 'int'],
         'price_currency' => ['path' => 'cubfable.price_currency', 'cast' => 'string'],
         'registration_open' => ['path' => 'cubfable.registration_open', 'cast' => 'bool'],

@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Enums\OrderStatus;
+use App\Enums\PaymentProvider;
 use App\Models\Book;
 use App\Models\Order;
 use App\Models\User;
@@ -24,7 +25,8 @@ class OrderFactory extends Factory
         return [
             'user_id' => User::factory(),
             'book_id' => Book::factory(),
-            'stripe_payment_intent_id' => 'pi_'.Str::random(24),
+            'provider' => PaymentProvider::Stripe,
+            'provider_transaction_id' => 'pi_'.Str::random(24),
             'amount' => 799,
             'currency' => 'eur',
             'status' => OrderStatus::Pending,
@@ -40,6 +42,17 @@ class OrderFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'status' => OrderStatus::Pending,
             'paid_at' => null,
+        ]);
+    }
+
+    /**
+     * An order created through Paddle.
+     */
+    public function paddle(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'provider' => PaymentProvider::Paddle,
+            'provider_transaction_id' => 'txn_'.Str::random(24),
         ]);
     }
 

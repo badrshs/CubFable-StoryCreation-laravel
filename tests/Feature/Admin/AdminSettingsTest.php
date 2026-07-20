@@ -201,6 +201,19 @@ class AdminSettingsTest extends TestCase
             ->assertSessionHasErrors('cover_image_provider');
     }
 
+    public function test_the_payment_provider_saves_and_rejects_unknown_values(): void
+    {
+        $this->actingAs($this->admin())
+            ->put('/admin/settings', $this->payload(['payment_provider' => 'paddle']))
+            ->assertRedirect();
+
+        $this->assertSame('paddle', config('cubfable.payment_provider'));
+
+        $this->actingAs($this->admin())
+            ->put('/admin/settings', $this->payload(['payment_provider' => 'paypal']))
+            ->assertSessionHasErrors('payment_provider');
+    }
+
     public function test_page_bounds_must_be_coherent(): void
     {
         $this->actingAs($this->admin())

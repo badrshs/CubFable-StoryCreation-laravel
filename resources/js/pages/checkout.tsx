@@ -1,4 +1,6 @@
 import { Link, router } from '@inertiajs/react';
+import { CheckoutEventNames, initializePaddle } from '@paddle/paddle-js';
+import type { Paddle } from '@paddle/paddle-js';
 import {
     Elements,
     PaymentElement,
@@ -22,7 +24,7 @@ import {
     Sparkles,
     Wand2,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import BookCover from '@/components/cubfable/book-cover';
 import Starfield from '@/components/cubfable/starfield';
@@ -115,6 +117,56 @@ function PriceTag({
     );
 }
 
+// The two consent checkboxes every payment provider shares: the pay action
+// stays locked until both are ticked.
+function ConsentChecks({
+    acceptTerms,
+    acceptGeneration,
+    onAcceptTerms,
+    onAcceptGeneration,
+}: {
+    acceptTerms: boolean;
+    acceptGeneration: boolean;
+    onAcceptTerms: (value: boolean) => void;
+    onAcceptGeneration: (value: boolean) => void;
+}) {
+    const t = useT();
+
+    return (
+        <fieldset className="mt-6 space-y-4">
+            <legend className="sr-only">{t('checkout.consentLegend')}</legend>
+            <div className="flex items-start gap-3">
+                <Checkbox
+                    id="accept-terms"
+                    checked={acceptTerms}
+                    onCheckedChange={(v) => onAcceptTerms(v === true)}
+                    className="mt-0.5"
+                />
+                <Label
+                    htmlFor="accept-terms"
+                    className="cursor-pointer text-sm leading-relaxed font-normal text-muted-foreground"
+                >
+                    {t('checkout.consentTerms')}
+                </Label>
+            </div>
+            <div className="flex items-start gap-3">
+                <Checkbox
+                    id="accept-generation"
+                    checked={acceptGeneration}
+                    onCheckedChange={(v) => onAcceptGeneration(v === true)}
+                    className="mt-0.5"
+                />
+                <Label
+                    htmlFor="accept-generation"
+                    className="cursor-pointer text-sm leading-relaxed font-normal text-muted-foreground"
+                >
+                    {t('checkout.consentGeneration')}
+                </Label>
+            </div>
+        </fieldset>
+    );
+}
+
 // The real payment form. Rendered inside <Elements> so useStripe/useElements have the
 // PaymentIntent client secret. Collects consent, mounts the Stripe Payment Element, and
 // confirms the payment. On success it routes to the reader; the webhook flips the book to
@@ -172,39 +224,12 @@ function PaymentForm({
                 <PaymentElement options={{ layout: 'tabs' }} />
             </div>
 
-            <fieldset className="mt-6 space-y-4">
-                <legend className="sr-only">
-                    {t('checkout.consentLegend')}
-                </legend>
-                <div className="flex items-start gap-3">
-                    <Checkbox
-                        id="accept-terms"
-                        checked={acceptTerms}
-                        onCheckedChange={(v) => setAcceptTerms(v === true)}
-                        className="mt-0.5"
-                    />
-                    <Label
-                        htmlFor="accept-terms"
-                        className="cursor-pointer text-sm leading-relaxed font-normal text-muted-foreground"
-                    >
-                        {t('checkout.consentTerms')}
-                    </Label>
-                </div>
-                <div className="flex items-start gap-3">
-                    <Checkbox
-                        id="accept-generation"
-                        checked={acceptGeneration}
-                        onCheckedChange={(v) => setAcceptGeneration(v === true)}
-                        className="mt-0.5"
-                    />
-                    <Label
-                        htmlFor="accept-generation"
-                        className="cursor-pointer text-sm leading-relaxed font-normal text-muted-foreground"
-                    >
-                        {t('checkout.consentGeneration')}
-                    </Label>
-                </div>
-            </fieldset>
+            <ConsentChecks
+                acceptTerms={acceptTerms}
+                acceptGeneration={acceptGeneration}
+                onAcceptTerms={setAcceptTerms}
+                onAcceptGeneration={setAcceptGeneration}
+            />
 
             <div className="mt-6">
                 <Button
@@ -241,28 +266,179 @@ function PaymentForm({
     );
 }
 
-type CheckoutProps = {
-    book: Book;
-    clientSecret: string;
-    publishableKey: string;
-    amount: string;
-    currency: string;
-};
-
-export default function Checkout({
-    book,
+// Mounts Stripe Elements around the payment form. Behavior is unchanged from
+// when checkout was Stripe-only; this wrapper just keeps loadStripe out of the
+// Paddle path.
+function StripePaymentPanel({
+    bookId,
     clientSecret,
     publishableKey,
-    amount,
     currency,
-}: CheckoutProps) {
-    const t = useT();
-    const reduceMotion = useReducedMotion();
-
+    price,
+}: {
+    bookId: number;
+    clientSecret: string;
+    publishableKey: string;
+    currency: string;
+    price: string;
+}) {
     const stripePromise = useMemo(
         () => loadStripe(publishableKey),
         [publishableKey],
     );
+
+    return (
+        <Elements
+            stripe={stripePromise}
+            options={{
+                clientSecret,
+                appearance: {
+                    theme: 'stripe',
+                    variables: { borderRadius: '12px' },
+                },
+            }}
+        >
+            <PaymentForm bookId={bookId} currency={currency} price={price} />
+        </Elements>
+    );
+}
+
+// Paddle's inline checkout renders its own payment UI (including the pay
+// button) inside an iframe, so consent gates the frame itself: nothing is
+// mounted until both boxes are ticked, and unticking closes the checkout.
+// On success it routes to the reader; the webhook (or the reader's
+// reconcile-on-load) flips the book to pending server-side, so the client
+// return is cosmetic, exactly like the Stripe path.
+function PaddlePaymentPanel({
+    bookId,
+    transactionId,
+    clientToken,
+    environment,
+}: {
+    bookId: number;
+    transactionId: string;
+    clientToken: string;
+    environment: 'sandbox' | 'production';
+}) {
+    const t = useT();
+    const [acceptTerms, setAcceptTerms] = useState(false);
+    const [acceptGeneration, setAcceptGeneration] = useState(false);
+    const [paddle, setPaddle] = useState<Paddle | null>(null);
+    const [failed, setFailed] = useState(false);
+    const openedRef = useRef(false);
+    const consentGiven = acceptTerms && acceptGeneration;
+
+    useEffect(() => {
+        let cancelled = false;
+
+        initializePaddle({
+            environment,
+            token: clientToken,
+            eventCallback: (event) => {
+                if (event.name === CheckoutEventNames.CHECKOUT_COMPLETED) {
+                    router.visit(show.url(bookId));
+                } else if (
+                    event.name === CheckoutEventNames.CHECKOUT_ERROR ||
+                    event.name === CheckoutEventNames.CHECKOUT_PAYMENT_FAILED
+                ) {
+                    setFailed(true);
+                }
+            },
+        }).then((instance) => {
+            if (!cancelled && instance) {
+                setPaddle(instance);
+            }
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [environment, clientToken, bookId]);
+
+    useEffect(() => {
+        if (!paddle) {
+            return;
+        }
+
+        if (consentGiven) {
+            openedRef.current = true;
+            paddle.Checkout.open({
+                transactionId,
+                settings: {
+                    displayMode: 'inline',
+                    frameTarget: 'paddle-checkout-frame',
+                    frameInitialHeight: 450,
+                    frameStyle:
+                        'width: 100%; min-width: 286px; background-color: transparent; border: none;',
+                },
+            });
+        } else if (openedRef.current) {
+            openedRef.current = false;
+            paddle.Checkout.close();
+        }
+    }, [paddle, consentGiven, transactionId]);
+
+    return (
+        <div className="relative">
+            <ConsentChecks
+                acceptTerms={acceptTerms}
+                acceptGeneration={acceptGeneration}
+                onAcceptTerms={(value) => {
+                    setAcceptTerms(value);
+                    setFailed(false);
+                }}
+                onAcceptGeneration={(value) => {
+                    setAcceptGeneration(value);
+                    setFailed(false);
+                }}
+            />
+
+            <div className="mt-6 mb-2">
+                <p className="font-display text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                    {t('checkout.paymentMethod')}
+                </p>
+            </div>
+            <div className="rounded-2xl border border-card-border bg-background/60 p-4">
+                {consentGiven ? (
+                    <div className="paddle-checkout-frame" />
+                ) : (
+                    <p className="flex items-center justify-center gap-1.5 py-8 text-center text-xs font-medium text-muted-foreground">
+                        <Info className="h-3.5 w-3.5" />
+                        {t('checkout.payNeedsConsent')}
+                    </p>
+                )}
+            </div>
+            {failed && (
+                <p
+                    className="mt-2.5 flex items-center justify-center gap-1.5 text-center text-xs font-medium text-destructive"
+                    role="alert"
+                >
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    {t('checkout.payError')}
+                </p>
+            )}
+        </div>
+    );
+}
+
+type CheckoutProps = {
+    book: Book;
+    amount: string;
+    currency: string;
+} & (
+    | { provider: 'stripe'; clientSecret: string; publishableKey: string }
+    | {
+          provider: 'paddle';
+          transactionId: string;
+          clientToken: string;
+          environment: 'sandbox' | 'production';
+      }
+);
+
+export default function Checkout(props: CheckoutProps) {
+    const { book, amount, currency } = props;
+    const t = useT();
+    const reduceMotion = useReducedMotion();
 
     return (
         <div className="bg-grain relative min-h-[100dvh] overflow-hidden bg-background">
@@ -447,24 +623,24 @@ export default function Checkout({
                             </div>
                         </div>
 
-                        {/* Real Stripe payment */}
+                        {/* Real payment, via the active provider */}
                         <div className="relative">
-                            <Elements
-                                stripe={stripePromise}
-                                options={{
-                                    clientSecret,
-                                    appearance: {
-                                        theme: 'stripe',
-                                        variables: { borderRadius: '12px' },
-                                    },
-                                }}
-                            >
-                                <PaymentForm
+                            {props.provider === 'paddle' ? (
+                                <PaddlePaymentPanel
                                     bookId={book.id}
+                                    transactionId={props.transactionId}
+                                    clientToken={props.clientToken}
+                                    environment={props.environment}
+                                />
+                            ) : (
+                                <StripePaymentPanel
+                                    bookId={book.id}
+                                    clientSecret={props.clientSecret}
+                                    publishableKey={props.publishableKey}
                                     currency={currency}
                                     price={amount}
                                 />
-                            </Elements>
+                            )}
                         </div>
 
                         {/* Trust cues */}

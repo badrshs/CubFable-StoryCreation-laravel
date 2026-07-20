@@ -28,7 +28,7 @@ class AdminDashboardTest extends TestCase
         Order::query()->create([
             'user_id' => $admin->id,
             'book_id' => $complete->id,
-            'stripe_payment_intent_id' => 'pi_test_1',
+            'provider_transaction_id' => 'pi_test_1',
             'amount' => 799,
             'currency' => 'eur',
             'status' => OrderStatus::Paid,

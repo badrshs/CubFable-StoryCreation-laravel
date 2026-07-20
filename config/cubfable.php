@@ -15,6 +15,13 @@ return [
     'price_currency' => strtolower((string) env('PRICE_CURRENCY', 'eur')),
 
     /*
+     * Which payment provider new checkouts use: 'stripe' or 'paddle'.
+     * Existing orders always reconcile against the provider they were
+     * created with, so switching never strands an in-flight payment.
+     */
+    'payment_provider' => strtolower((string) env('PAYMENT_PROVIDER', 'stripe')),
+
+    /*
     |--------------------------------------------------------------------------
     | PDF output
     |--------------------------------------------------------------------------

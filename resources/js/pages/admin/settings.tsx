@@ -203,19 +203,17 @@ export default function AdminSettings({
     // One preset card per Replicate catalog engine (primary lineup), then
     // the other providers.
     const enginePresets: EnginePreset[] = [
-        ...replicateEngines.map(
-            (engine): EnginePreset => ({
-                id: `replicate:${engine.model}`,
-                title: `Replicate ${engine.label}`,
-                description: engine.description,
-                cost: engine.costDetail,
-                icon: Cloud,
-                values: {
-                    image_provider: 'replicate',
-                    image_model_replicate: engine.model,
-                },
-            }),
-        ),
+        ...replicateEngines.map((engine): EnginePreset => ({
+            id: `replicate:${engine.model}`,
+            title: `Replicate ${engine.label}`,
+            description: engine.description,
+            cost: engine.costDetail,
+            icon: Cloud,
+            values: {
+                image_provider: 'replicate',
+                image_model_replicate: engine.model,
+            },
+        })),
         ...STATIC_ENGINE_PRESETS,
     ];
 
@@ -651,8 +649,8 @@ export default function AdminSettings({
                             </div>
                             <p className="mb-2 text-xs text-muted-foreground">
                                 Per-language overrides (win over the default;
-                                empty inherits it). Make sure the font
-                                supports that language's script.
+                                empty inherits it). Make sure the font supports
+                                that language's script.
                             </p>
                             <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
                                 {storyLanguages.map((language) => (
@@ -971,6 +969,12 @@ export default function AdminSettings({
                                     <CardTitle>Store</CardTitle>
                                 </CardHeader>
                                 <CardContent className="space-y-4">
+                                    {select(
+                                        'payment_provider',
+                                        'Payment provider',
+                                        ['stripe', 'paddle'],
+                                        'Used for new checkouts; in-flight orders finish on the provider they started with.',
+                                    )}
                                     <div className="grid grid-cols-2 gap-4">
                                         {number(
                                             'price_cents',

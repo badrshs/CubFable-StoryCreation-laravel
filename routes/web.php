@@ -8,6 +8,7 @@ use App\Http\Controllers\CharacterController;
 use App\Http\Controllers\CheckoutController;
 use App\Http\Controllers\DebugPromptController;
 use App\Http\Controllers\HomeController;
+use App\Http\Controllers\PaddleWebhookController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\StripeWebhookController;
 use App\Http\Controllers\TemplateController;
@@ -91,6 +92,7 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
 });
 
 Route::post('webhooks/stripe', StripeWebhookController::class)->name('webhooks.stripe');
+Route::post('webhooks/paddle', PaddleWebhookController::class)->name('webhooks.paddle');
 
 Route::redirect('dashboard', '/books')->name('dashboard');
 

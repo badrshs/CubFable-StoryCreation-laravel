@@ -13,17 +13,17 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
-class StripeWebhookTest extends TestCase
+class PaddleWebhookTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const WEBHOOK_SECRET = 'whsec_test_secret';
+    private const WEBHOOK_SECRET = 'pdl_ntfset_test_secret';
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        config()->set('services.stripe.webhook_secret', self::WEBHOOK_SECRET);
+        config()->set('services.paddle.webhook_secret', self::WEBHOOK_SECRET);
     }
 
     public function test_the_webhook_route_is_exempt_from_csrf_verification(): void
@@ -39,8 +39,8 @@ class StripeWebhookTest extends TestCase
 
             // ...while the same tokenless POST to the webhook route passes the
             // middleware and reaches the controller, which then rejects the
-            // missing Stripe signature itself.
-            $this->post(route('webhooks.stripe'))
+            // missing Paddle signature itself.
+            $this->post(route('webhooks.paddle'))
                 ->assertBadRequest()
                 ->assertJson(['error' => 'Webhook not configured']);
         } finally {
@@ -52,7 +52,7 @@ class StripeWebhookTest extends TestCase
     {
         Queue::fake();
 
-        $response = $this->postRaw((string) json_encode($this->paymentIntentEvent('payment_intent.succeeded', 'pi_test_123')));
+        $response = $this->postRaw((string) json_encode($this->transactionEvent('transaction.completed', 'txn_test_123')));
 
         $response->assertBadRequest();
         Queue::assertNothingPushed();
@@ -62,13 +62,13 @@ class StripeWebhookTest extends TestCase
     {
         Queue::fake();
 
-        [$book, $order] = $this->draftBookAwaitingPayment('pi_test_123');
+        [$book, $order] = $this->draftBookAwaitingPayment('txn_test_123');
 
-        $payload = (string) json_encode($this->paymentIntentEvent('payment_intent.succeeded', 'pi_test_123'));
+        $payload = (string) json_encode($this->transactionEvent('transaction.completed', 'txn_test_123'));
         $timestamp = time();
-        $forged = hash_hmac('sha256', $timestamp.'.'.$payload, 'whsec_wrong_secret');
+        $forged = hash_hmac('sha256', $timestamp.':'.$payload, 'pdl_ntfset_wrong_secret');
 
-        $this->postRaw($payload, "t={$timestamp},v1={$forged}")
+        $this->postRaw($payload, "ts={$timestamp};h1={$forged}")
             ->assertBadRequest()
             ->assertJson(['error' => 'Invalid signature']);
 
@@ -77,13 +77,32 @@ class StripeWebhookTest extends TestCase
         Queue::assertNothingPushed();
     }
 
-    public function test_a_signed_succeeded_event_marks_the_order_paid_and_starts_generation(): void
+    public function test_a_request_with_a_stale_timestamp_is_rejected(): void
     {
         Queue::fake();
 
-        [$book, $order] = $this->draftBookAwaitingPayment('pi_test_123');
+        [$book, $order] = $this->draftBookAwaitingPayment('txn_test_123');
 
-        $this->postSigned($this->paymentIntentEvent('payment_intent.succeeded', 'pi_test_123'))
+        $payload = (string) json_encode($this->transactionEvent('transaction.completed', 'txn_test_123'));
+        $timestamp = time() - 3600;
+        $signature = hash_hmac('sha256', $timestamp.':'.$payload, self::WEBHOOK_SECRET);
+
+        $this->postRaw($payload, "ts={$timestamp};h1={$signature}")
+            ->assertBadRequest()
+            ->assertJson(['error' => 'Invalid signature']);
+
+        $this->assertSame(OrderStatus::Pending, $order->refresh()->status);
+        $this->assertSame(BookStatus::Draft, $book->refresh()->status);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_a_signed_completed_event_marks_the_order_paid_and_starts_generation(): void
+    {
+        Queue::fake();
+
+        [$book, $order] = $this->draftBookAwaitingPayment('txn_test_123');
+
+        $this->postSigned($this->transactionEvent('transaction.completed', 'txn_test_123'))
             ->assertOk()
             ->assertJson(['received' => true]);
 
@@ -99,20 +118,20 @@ class StripeWebhookTest extends TestCase
         Queue::assertPushed(GenerateStorybookJob::class, fn (GenerateStorybookJob $job): bool => $job->bookId === $book->id);
     }
 
-    public function test_a_duplicate_succeeded_delivery_changes_nothing_and_dispatches_nothing(): void
+    public function test_a_duplicate_completed_delivery_changes_nothing_and_dispatches_nothing(): void
     {
         Queue::fake();
 
-        [$book, $order] = $this->draftBookAwaitingPayment('pi_test_123');
+        [$book, $order] = $this->draftBookAwaitingPayment('txn_test_123');
 
-        $event = $this->paymentIntentEvent('payment_intent.succeeded', 'pi_test_123');
+        $event = $this->transactionEvent('transaction.completed', 'txn_test_123');
 
         $this->postSigned($event)->assertOk();
 
         $firstPaidAt = $order->refresh()->paid_at;
 
         // Move the clock so a second write to paid_at would be detectable.
-        $this->travel(5)->minutes();
+        $this->travel(4)->minutes();
 
         $this->postSigned($event)->assertOk();
 
@@ -127,9 +146,9 @@ class StripeWebhookTest extends TestCase
     {
         Queue::fake();
 
-        [$book, $order] = $this->draftBookAwaitingPayment('pi_test_123');
+        [$book, $order] = $this->draftBookAwaitingPayment('txn_test_123');
 
-        $this->postSigned($this->paymentIntentEvent('payment_intent.payment_failed', 'pi_test_123'))
+        $this->postSigned($this->transactionEvent('transaction.payment_failed', 'txn_test_123'))
             ->assertOk()
             ->assertJson(['received' => true]);
 
@@ -138,46 +157,62 @@ class StripeWebhookTest extends TestCase
         Queue::assertNothingPushed();
     }
 
-    /**
-     * A draft book with a pending order tied to a known PaymentIntent id.
-     *
-     * @return array{0: Book, 1: Order}
-     */
-    private function draftBookAwaitingPayment(string $paymentIntentId): array
+    public function test_a_paddle_event_never_touches_another_providers_order(): void
     {
+        Queue::fake();
+
+        // A Stripe order whose transaction id happens to match the event's.
         $user = User::factory()->create();
         $book = Book::factory()->draft()->for($user)->create();
         $order = Order::factory()->pending()->for($user)->for($book)->create([
-            'provider_transaction_id' => $paymentIntentId,
+            'provider_transaction_id' => 'txn_test_123',
+        ]);
+
+        $this->postSigned($this->transactionEvent('transaction.completed', 'txn_test_123'))
+            ->assertOk();
+
+        $this->assertSame(OrderStatus::Pending, $order->refresh()->status);
+        $this->assertSame(BookStatus::Draft, $book->refresh()->status);
+        Queue::assertNothingPushed();
+    }
+
+    /**
+     * A draft book with a pending Paddle order tied to a known transaction id.
+     *
+     * @return array{0: Book, 1: Order}
+     */
+    private function draftBookAwaitingPayment(string $transactionId): array
+    {
+        $user = User::factory()->create();
+        $book = Book::factory()->draft()->for($user)->create();
+        $order = Order::factory()->pending()->paddle()->for($user)->for($book)->create([
+            'provider_transaction_id' => $transactionId,
         ]);
 
         return [$book, $order];
     }
 
     /**
-     * A minimal Stripe event envelope around a payment_intent object.
+     * A minimal Paddle event envelope around a transaction object.
      *
      * @return array<string, mixed>
      */
-    private function paymentIntentEvent(string $type, string $paymentIntentId): array
+    private function transactionEvent(string $type, string $transactionId): array
     {
         return [
-            'id' => 'evt_test_1',
-            'object' => 'event',
-            'type' => $type,
-            'created' => time(),
+            'event_id' => 'evt_test_1',
+            'event_type' => $type,
+            'occurred_at' => now()->toIso8601String(),
             'data' => [
-                'object' => [
-                    'id' => $paymentIntentId,
-                    'object' => 'payment_intent',
-                ],
+                'id' => $transactionId,
+                'status' => $type === 'transaction.completed' ? 'completed' : 'past_due',
             ],
         ];
     }
 
     /**
-     * Sign the payload exactly the way Stripe does: the v1 scheme is an HMAC
-     * SHA-256 of "<timestamp>.<raw payload>" with the endpoint secret.
+     * Sign the payload exactly the way Paddle does: h1 is an HMAC SHA-256 of
+     * "<timestamp>:<raw payload>" with the endpoint secret.
      *
      * @param  array<string, mixed>  $event
      */
@@ -185,9 +220,9 @@ class StripeWebhookTest extends TestCase
     {
         $payload = (string) json_encode($event);
         $timestamp = time();
-        $signature = hash_hmac('sha256', $timestamp.'.'.$payload, self::WEBHOOK_SECRET);
+        $signature = hash_hmac('sha256', $timestamp.':'.$payload, self::WEBHOOK_SECRET);
 
-        return $this->postRaw($payload, "t={$timestamp},v1={$signature}");
+        return $this->postRaw($payload, "ts={$timestamp};h1={$signature}");
     }
 
     /**
@@ -199,9 +234,9 @@ class StripeWebhookTest extends TestCase
         $server = ['CONTENT_TYPE' => 'application/json'];
 
         if ($signatureHeader !== null) {
-            $server['HTTP_STRIPE_SIGNATURE'] = $signatureHeader;
+            $server['HTTP_PADDLE_SIGNATURE'] = $signatureHeader;
         }
 
-        return $this->call('POST', route('webhooks.stripe'), [], [], [], $server, $payload);
+        return $this->call('POST', route('webhooks.paddle'), [], [], [], $server, $payload);
     }
 }

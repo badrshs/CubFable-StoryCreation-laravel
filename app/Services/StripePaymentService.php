@@ -4,11 +4,13 @@ namespace App\Services;
 
 use App\Enums\BookStatus;
 use App\Enums\OrderStatus;
+use App\Enums\PaymentProvider;
 use App\Exceptions\InvalidBookStateException;
 use App\Exceptions\PaymentAlreadyCompletedException;
-use App\Jobs\GenerateStorybookJob;
 use App\Models\Book;
 use App\Models\Order;
+use App\Services\Payments\OrderFulfillment;
+use App\Services\Payments\PaymentGateway;
 use Illuminate\Database\UniqueConstraintViolationException;
 use RuntimeException;
 use Stripe\PaymentIntent;
@@ -19,9 +21,16 @@ use Stripe\StripeClient;
  * Shared by checkout, the Stripe webhook, and read-time reconciliation so a
  * successful payment is applied exactly once no matter which path sees it first.
  */
-class StripePaymentService
+class StripePaymentService implements PaymentGateway
 {
     private ?StripeClient $client = null;
+
+    public function __construct(private OrderFulfillment $fulfillment) {}
+
+    public function name(): PaymentProvider
+    {
+        return PaymentProvider::Stripe;
+    }
 
     /**
      * Safe to expose to the client (the publishable key is not a secret).
@@ -49,6 +58,20 @@ class StripePaymentService
     }
 
     /**
+     * The checkout props for a draft book: the PaymentIntent client secret the
+     * Stripe Payment Element needs, plus the shared provider/amount/currency.
+     *
+     * @return array<string, mixed>
+     */
+    public function createOrReuseCheckout(Book $book): array
+    {
+        return [
+            'provider' => PaymentProvider::Stripe->value,
+            ...$this->createOrReusePaymentIntent($book),
+        ];
+    }
+
+    /**
      * Create (or reuse) the Stripe PaymentIntent for a draft book. Reuses the
      * book's pending PaymentIntent when it is still confirmable; otherwise
      * creates a fresh one and records a pending order.
@@ -68,10 +91,10 @@ class StripePaymentService
         $existingOrder = $this->latestPendingOrderFor($book);
 
         if ($existingOrder !== null) {
-            $retrieved = $this->stripe()->paymentIntents->retrieve($existingOrder->stripe_payment_intent_id);
+            $retrieved = $this->stripe()->paymentIntents->retrieve($existingOrder->provider_transaction_id);
 
             if ($retrieved->status === PaymentIntent::STATUS_SUCCEEDED) {
-                $this->markOrderPaidAndStart($existingOrder->stripe_payment_intent_id);
+                $this->markOrderPaidAndStart($existingOrder->provider_transaction_id);
 
                 throw new PaymentAlreadyCompletedException;
             }
@@ -93,52 +116,11 @@ class StripePaymentService
 
     /**
      * Apply a successful payment for a PaymentIntent exactly once, then start
-     * generation. This is the single place that turns a paid order into a
-     * generating book, shared by the Stripe webhook and read-time reconciliation.
-     *
-     * Atomic and idempotent: only the caller that actually flips the order to
-     * paid proceeds (the conditional UPDATE claims the row), so concurrent
-     * webhook deliveries and reconciliation cannot double-fire. The book is
-     * flipped only while it is still a draft, so a stale event never overwrites
-     * an in-progress or completed book.
-     *
-     * Callers MUST have already established that the payment truly succeeded
-     * via a trusted signal (a signature-verified webhook event, or a
-     * server-side PaymentIntent retrieve), never a client claim.
+     * generation (see OrderFulfillment for the atomicity guarantees).
      */
     public function markOrderPaidAndStart(string $paymentIntentId): void
     {
-        $claimed = Order::query()
-            ->where('stripe_payment_intent_id', $paymentIntentId)
-            ->where('status', '!=', OrderStatus::Paid)
-            ->update([
-                'status' => OrderStatus::Paid->value,
-                'paid_at' => now(),
-            ]);
-
-        if ($claimed === 0) {
-            return;
-        }
-
-        $bookId = Order::query()
-            ->where('stripe_payment_intent_id', $paymentIntentId)
-            ->value('book_id');
-
-        if ($bookId === null) {
-            return;
-        }
-
-        $flipped = Book::query()
-            ->whereKey($bookId)
-            ->where('status', BookStatus::Draft)
-            ->update([
-                'status' => BookStatus::Pending->value,
-                'paid_at' => now(),
-            ]);
-
-        if ($flipped === 1) {
-            GenerateStorybookJob::dispatch($bookId);
-        }
+        $this->fulfillment->markPaidAndStart(PaymentProvider::Stripe, $paymentIntentId);
     }
 
     /**
@@ -146,9 +128,7 @@ class StripePaymentService
      */
     public function markOrderFailed(string $paymentIntentId): void
     {
-        Order::query()
-            ->where('stripe_payment_intent_id', $paymentIntentId)
-            ->update(['status' => OrderStatus::Failed->value]);
+        $this->fulfillment->markFailed(PaymentProvider::Stripe, $paymentIntentId);
     }
 
     /**
@@ -165,15 +145,16 @@ class StripePaymentService
         }
 
         $latestOrder = $book->orders()
+            ->where('provider', PaymentProvider::Stripe)
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->first();
 
         if ($latestOrder !== null) {
-            $retrieved = $this->stripe()->paymentIntents->retrieve($latestOrder->stripe_payment_intent_id);
+            $retrieved = $this->stripe()->paymentIntents->retrieve($latestOrder->provider_transaction_id);
 
             if ($retrieved->status === PaymentIntent::STATUS_SUCCEEDED) {
-                $this->markOrderPaidAndStart($latestOrder->stripe_payment_intent_id);
+                $this->markOrderPaidAndStart($latestOrder->provider_transaction_id);
             }
         }
 
@@ -202,7 +183,8 @@ class StripePaymentService
             Order::create([
                 'user_id' => $book->user_id,
                 'book_id' => $book->id,
-                'stripe_payment_intent_id' => $created->id,
+                'provider' => PaymentProvider::Stripe,
+                'provider_transaction_id' => $created->id,
                 'amount' => $this->priceCents(),
                 'currency' => $this->priceCurrency(),
                 'status' => OrderStatus::Pending,
@@ -216,13 +198,14 @@ class StripePaymentService
                 throw new RuntimeException('Failed to create or reuse a pending order.');
             }
 
-            return $this->stripe()->paymentIntents->retrieve($winner->stripe_payment_intent_id);
+            return $this->stripe()->paymentIntents->retrieve($winner->provider_transaction_id);
         }
     }
 
     private function latestPendingOrderFor(Book $book): ?Order
     {
         return $book->orders()
+            ->where('provider', PaymentProvider::Stripe)
             ->where('status', OrderStatus::Pending)
             ->orderByDesc('created_at')
             ->orderByDesc('id')

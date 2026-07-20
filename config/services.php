@@ -41,6 +41,13 @@ return [
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
     ],
 
+    'paddle' => [
+        'api_key' => env('PADDLE_API_KEY', ''),
+        'client_token' => env('PADDLE_CLIENT_TOKEN', ''),
+        'webhook_secret' => env('PADDLE_WEBHOOK_SECRET', ''),
+        'environment' => env('PADDLE_ENVIRONMENT', 'sandbox'),
+    ],
+
     /*
      * Cloudflare Turnstile bot protection on the auth endpoints. Leaving the
      * keys empty disables the check entirely (widget hidden, server skips),

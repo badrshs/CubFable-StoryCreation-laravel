@@ -103,7 +103,7 @@ class BookOwnershipTest extends TestCase
         $owner = User::factory()->create();
         $book = Book::factory()->draft()->for($owner)->create();
 
-        $this->mock(StripePaymentService::class)->shouldNotReceive('createOrReusePaymentIntent');
+        $this->mock(StripePaymentService::class)->shouldNotReceive('createOrReuseCheckout');
 
         $this->actingAs(User::factory()->create())
             ->get(route('checkout.show', ['id' => $book->id]))
@@ -128,10 +128,11 @@ class BookOwnershipTest extends TestCase
         $book = Book::factory()->draft()->for($user)->create();
 
         $this->mock(StripePaymentService::class, function (MockInterface $mock) use ($book): void {
-            $mock->shouldReceive('createOrReusePaymentIntent')
+            $mock->shouldReceive('createOrReuseCheckout')
                 ->once()
                 ->withArgs(fn (Book $candidate): bool => $candidate->is($book))
                 ->andReturn([
+                    'provider' => 'stripe',
                     'clientSecret' => 'pi_test_secret_123',
                     'publishableKey' => 'pk_test_123',
                     'amount' => 799,

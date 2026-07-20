@@ -26,7 +26,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // so it arrives unencrypted and must be exempt or the server reads null.
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state', 'cf_fp']);
 
-        $middleware->preventRequestForgery(except: ['webhooks/stripe']);
+        $middleware->preventRequestForgery(except: ['webhooks/stripe', 'webhooks/paddle']);
 
         $middleware->web(append: [
             HandleAppearance::class,

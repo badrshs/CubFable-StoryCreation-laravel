@@ -108,6 +108,7 @@ class SettingController extends Controller
             'pdf_page_size' => ['required', Rule::in(PageSize::keys())],
             'pdf_image_fit' => ['required', 'in:crop,full,overlay'],
             'photo_upload_quality' => ['required', 'in:original,optimized'],
+            'payment_provider' => ['required', 'in:stripe,paddle'],
             'price_cents' => ['required', 'integer', 'between:100,100000'],
             'price_currency' => ['required', 'in:eur,usd,gbp,try'],
             'registration_open' => ['required', 'boolean'],
