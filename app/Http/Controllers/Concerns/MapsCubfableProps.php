@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Concerns;
 
 use App\Models\Book;
 use App\Models\Character;
+use App\Models\CharacterPortrait;
 use App\Models\Page;
 use App\Models\Template;
 use Illuminate\Database\Eloquent\Relations\Pivot;
@@ -99,6 +100,18 @@ trait MapsCubfableProps
             'ageGroup' => $character->age_group,
             'description' => $character->description,
             'photoUrl' => $character->photo_url,
+            // Stylized portraits (one per art style the character has been
+            // drawn in), only when the caller eager-loaded them.
+            'portraits' => $character->relationLoaded('portraits')
+                ? $character->portraits
+                    ->map(fn (CharacterPortrait $portrait): array => [
+                        'artStyle' => $portrait->art_style,
+                        'url' => $portrait->url,
+                    ])
+                    ->filter(fn (array $portrait): bool => $portrait['url'] !== null)
+                    ->values()
+                    ->all()
+                : [],
         ];
 
         $pivot = $character->relationLoaded('pivot') ? $character->getRelation('pivot') : null;

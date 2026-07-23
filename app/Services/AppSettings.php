@@ -44,6 +44,8 @@ class AppSettings
         'image_aspect_ratio' => ['path' => 'cubfable.ai.image_aspect_ratio', 'cast' => 'string'],
         'cover_image_provider' => ['path' => 'cubfable.ai.cover_image_provider', 'cast' => 'string'],
         'cover_image_model' => ['path' => 'cubfable.ai.cover_image_model', 'cast' => 'string'],
+        'portrait_image_provider' => ['path' => 'cubfable.ai.portrait_image_provider', 'cast' => 'string'],
+        'portrait_image_model' => ['path' => 'cubfable.ai.portrait_image_model', 'cast' => 'string'],
         'pdf_page_size' => ['path' => 'cubfable.pdf.page_size', 'cast' => 'string'],
         'pdf_image_fit' => ['path' => 'cubfable.pdf.image_fit', 'cast' => 'string'],
         'pdf_font_default' => ['path' => 'cubfable.pdf.fonts.default', 'cast' => 'string'],

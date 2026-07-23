@@ -321,6 +321,7 @@
   "library.addFirstCharacter": "Añade tu primer personaje",
   "library.startAStory": "Empezar una historia",
   "library.heroBadge": "Héroe",
+  "library.storybookBadge": "Retrato de cuento",
   "library.edit": "Editar",
   "library.noDescription": "Todavía no hay descripción.",
   "library.portraitAlt": "Retrato de {name}",

@@ -97,6 +97,8 @@ This all happens automatically in the background after payment. In order:
 
 **2. The hero's visual identity is established.** By default the system first creates one "character sheet": a single stylized full-body illustration of the child based on the photo. That sheet is then used as the reference for the cover and every page, so the child looks consistent from page 1 to the end. (An admin can switch to a mode where the raw photo is used directly instead.) Each supporting character also gets a saved appearance description so they stay consistent too.
 
+These stylized portraits are drawn **once per character and art style, ever**: the first book pays for the photo-to-illustration jump, and every later book in the same style reuses the saved portrait for free (which also keeps the character looking identical across books). The portraits appear in the customer's character library, so parents see their child as a storybook character; uploading a new photo resets them so the next book redraws the character from the new face. Admins can point portrait drawing at a dedicated engine (separate from the one that draws pages), so the one image everything else inherits can run on the best available stylizer.
+
 **3. The cover is illustrated**, with the book title lettered directly into the artwork. The admin can assign a special (possibly more expensive) image engine just for covers, since the cover is the image that sells the book.
 
 **4. Every page is illustrated**, normally one at a time in order. With certain engines, the whole book can instead be drawn as one coherent batch so the characters and style match by construction; if that ever falls short, the system automatically falls back to page-by-page.

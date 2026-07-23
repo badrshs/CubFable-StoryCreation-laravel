@@ -25,6 +25,7 @@ class CharacterController extends Controller
     public function index(Request $request): Response
     {
         $characters = $request->user()->characters()
+            ->with('portraits')
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->get();
@@ -92,6 +93,8 @@ class CharacterController extends Controller
 
         $previousPhotoPath = null;
 
+        $photoChanged = false;
+
         if (array_key_exists('photoUrl', $input)) {
             $previousPhotoPath = $character->photo_path;
 
@@ -104,12 +107,20 @@ class CharacterController extends Controller
             }
 
             $character->appearance = null;
+            $photoChanged = $previousPhotoPath !== $character->photo_path;
         }
 
         $character->save();
 
         if ($previousPhotoPath !== null && $previousPhotoPath !== $character->photo_path) {
             $images->delete($previousPhotoPath);
+        }
+
+        // A new (or removed) photo invalidates every cached stylized
+        // portrait: the next generation redraws the character.
+        if ($photoChanged) {
+            $character->portraits()->delete();
+            $images->deleteDirectory("portraits/{$character->id}");
         }
 
         return back();
@@ -126,6 +137,7 @@ class CharacterController extends Controller
 
         if ($character !== null) {
             $images->delete($character->photo_path);
+            $images->deleteDirectory("portraits/{$character->id}");
             $character->delete();
         }
 

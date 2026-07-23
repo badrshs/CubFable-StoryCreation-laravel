@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -54,6 +55,14 @@ class Character extends Model
     {
         return $this->belongsToMany(Book::class, 'book_characters')
             ->withPivot(['is_main', 'sort_order']);
+    }
+
+    /**
+     * @return HasMany<CharacterPortrait, $this>
+     */
+    public function portraits(): HasMany
+    {
+        return $this->hasMany(CharacterPortrait::class);
     }
 
     /**

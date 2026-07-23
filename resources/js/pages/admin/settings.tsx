@@ -319,6 +319,55 @@ export default function AdminSettings({
         );
     };
 
+    // The dedicated portrait (character sheet) engine, same encoding as the
+    // cover engine select.
+    const portraitEngineValue = (() => {
+        const provider = String(settings.portrait_image_provider?.value ?? '');
+        const model = String(settings.portrait_image_model?.value ?? '');
+
+        if (provider === '') {
+            return 'default';
+        }
+
+        if (provider === 'replicate' && model !== '') {
+            return `replicate:${model}`;
+        }
+
+        return provider;
+    })();
+    const [savingPortraitEngine, setSavingPortraitEngine] = useState(false);
+
+    const savePortraitEngine = (value: string) => {
+        const provider =
+            value === 'default'
+                ? ''
+                : value.startsWith('replicate:')
+                  ? 'replicate'
+                  : value;
+        const model = value.startsWith('replicate:')
+            ? value.slice('replicate:'.length)
+            : '';
+
+        form.setData({
+            ...form.data,
+            portrait_image_provider: provider,
+            portrait_image_model: model,
+        });
+        router.put(
+            '/admin/settings',
+            {
+                ...form.data,
+                portrait_image_provider: provider,
+                portrait_image_model: model,
+            },
+            {
+                preserveScroll: true,
+                onStart: () => setSavingPortraitEngine(true),
+                onFinish: () => setSavingPortraitEngine(false),
+            },
+        );
+    };
+
     const applyPreset = (preset: EnginePreset) => {
         if (preset.values.image_model_replicate !== undefined) {
             setReplicateCustomModel(false);
@@ -477,6 +526,62 @@ export default function AdminSettings({
                                     value={coverEngineValue}
                                     onValueChange={saveCoverEngine}
                                     disabled={savingCoverEngine}
+                                >
+                                    <SelectTrigger className="max-w-xl">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="default">
+                                            Same as main engine
+                                        </SelectItem>
+                                        {replicateEngines.map((engine) => (
+                                            <SelectItem
+                                                key={engine.model}
+                                                value={`replicate:${engine.model}`}
+                                            >
+                                                Replicate {engine.label} (
+                                                {engine.costDetail})
+                                            </SelectItem>
+                                        ))}
+                                        {[
+                                            'openai',
+                                            'gemini',
+                                            'openrouter',
+                                            'flow',
+                                            'grok',
+                                            'piapi',
+                                            'replicate',
+                                        ].map((provider) => (
+                                            <SelectItem
+                                                key={provider}
+                                                value={provider}
+                                            >
+                                                {provider} (configured model)
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </Field>
+                        </div>
+
+                        {/* The character portrait (sheet) is the ONE
+                            photo-to-illustration jump every other image
+                            inherits, so it can run on the best stylizer
+                            while pages run on a consistency engine. Drawn
+                            once per character and style, then reused. */}
+                        <div className="mt-4 rounded-xl border border-card-border bg-muted/20 p-4">
+                            <Field
+                                label="Portrait engine"
+                                hint="The character sheet only: drawn once per character and art style, then reused by every book. 'Same as main engine' follows the cards above."
+                                overridden={
+                                    settings.portrait_image_provider
+                                        ?.overridden
+                                }
+                            >
+                                <Select
+                                    value={portraitEngineValue}
+                                    onValueChange={savePortraitEngine}
+                                    disabled={savingPortraitEngine}
                                 >
                                     <SelectTrigger className="max-w-xl">
                                         <SelectValue />

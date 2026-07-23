@@ -449,6 +449,14 @@ function CharacterCard({
 }) {
     const t = useT();
 
+    // Stylized portraits (one per art style the character was drawn in).
+    // When any exist, the storybook version takes the stage over the photo;
+    // chips flip between styles.
+    const portraits = character.portraits ?? [];
+    const [portraitIndex, setPortraitIndex] = useState(0);
+    const activePortrait = portraits[portraitIndex] ?? portraits[0] ?? null;
+    const stageUrl = activePortrait?.url ?? character.photoUrl;
+
     return (
         <motion.article
             variants={fadeUp}
@@ -460,9 +468,9 @@ function CharacterCard({
                     aria-hidden
                     className="pointer-events-none absolute inset-x-8 top-4 h-24 rounded-full bg-primary/15 blur-3xl transition-opacity duration-500 group-hover:bg-gold/20"
                 />
-                {character.photoUrl ? (
+                {stageUrl ? (
                     <img
-                        src={character.photoUrl}
+                        src={stageUrl}
                         alt={t('library.portraitAlt', {
                             name: character.name,
                         })}
@@ -476,6 +484,30 @@ function CharacterCard({
                         >
                             {initialOf(character.name)}
                         </span>
+                    </div>
+                )}
+                {activePortrait && (
+                    <span className="absolute start-3 top-3 z-20 inline-flex items-center gap-1 rounded-full bg-card/90 px-2.5 py-1 font-display text-[0.68rem] font-semibold text-foreground shadow-soft">
+                        <Sparkles className="h-3 w-3 text-gold" aria-hidden />
+                        {t('library.storybookBadge')}
+                    </span>
+                )}
+                {portraits.length > 1 && (
+                    <div className="absolute inset-x-3 bottom-3 z-20 flex flex-wrap justify-center gap-1">
+                        {portraits.map((portrait, index) => (
+                            <button
+                                key={portrait.artStyle}
+                                type="button"
+                                onClick={() => setPortraitIndex(index)}
+                                className={`rounded-full px-2 py-0.5 font-display text-[0.62rem] font-semibold shadow-soft transition-colors ${
+                                    index === portraitIndex
+                                        ? 'bg-gold text-gold-foreground'
+                                        : 'bg-card/85 text-muted-foreground hover:text-foreground'
+                                }`}
+                            >
+                                {portrait.artStyle}
+                            </button>
+                        ))}
                     </div>
                 )}
                 {character.isMain && (

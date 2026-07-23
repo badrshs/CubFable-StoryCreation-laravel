@@ -253,6 +253,15 @@ return [
         'cover_image_model' => (string) env('COVER_IMAGE_MODEL', ''),
 
         /*
+         * A dedicated engine for the CHARACTER SHEET (portrait) only: the one
+         * photo-to-illustration jump every other image inherits, so it can
+         * run on the best stylizer while pages run on a consistency engine.
+         * Empty provider means the sheet uses the main image engine.
+         */
+        'portrait_image_provider' => (string) env('PORTRAIT_IMAGE_PROVIDER', ''),
+        'portrait_image_model' => (string) env('PORTRAIT_IMAGE_MODEL', ''),
+
+        /*
          * The aspect ratio every page and cover is generated at. Engines
          * that only accept their own ratio presets get the closest one they
          * support. The character sheet stays portrait regardless; it is an

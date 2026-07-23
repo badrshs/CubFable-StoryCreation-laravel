@@ -334,7 +334,14 @@ class BookController extends Controller
                 $existing->photo_path = $images->storeDataUrl($member['photoUrl'], "characters/{$existing->id}");
                 $existing->appearance = null;
 
-                DB::afterCommit(fn () => $images->delete($previousPhotoPath));
+                // A new photo invalidates every cached stylized portrait: the
+                // next generation redraws the character from the new face.
+                $existing->portraits()->delete();
+
+                DB::afterCommit(function () use ($images, $previousPhotoPath, $existing): void {
+                    $images->delete($previousPhotoPath);
+                    $images->deleteDirectory("portraits/{$existing->id}");
+                });
             }
 
             $existing->save();

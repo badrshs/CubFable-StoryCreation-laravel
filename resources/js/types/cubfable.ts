@@ -49,6 +49,11 @@ export type Template = {
 
 export type CharacterAgeGroup = 'adult' | 'child';
 
+export type CharacterPortrait = {
+    artStyle: string;
+    url: string;
+};
+
 export type Character = {
     id: number;
     name: string;
@@ -56,6 +61,7 @@ export type Character = {
     ageGroup: CharacterAgeGroup | null;
     description: string | null;
     photoUrl: string | null;
+    portraits?: CharacterPortrait[];
     isMain?: boolean;
 };
 

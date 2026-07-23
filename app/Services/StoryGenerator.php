@@ -7,6 +7,7 @@ use App\Enums\PageStatus;
 use App\Exceptions\ImageFlaggedSensitiveException;
 use App\Models\Book;
 use App\Models\Character;
+use App\Models\CharacterPortrait;
 use App\Models\ImagePrompt;
 use App\Models\ImageVersion;
 use App\Models\Page;
@@ -525,33 +526,75 @@ class StoryGenerator
     }
 
     /**
-     * Generate, store and record the hero's character sheet, replacing any
-     * previous file. Unlike prepareHeroSheet this surfaces failures to the
-     * caller.
+     * The hero's character sheet, reused from the character's portrait
+     * library when this style was already drawn once (the
+     * photo-to-illustration jump happens once per character and style, ever).
+     * A newly generated sheet is saved into that library for every future
+     * book. Unlike prepareHeroSheet this surfaces failures to the caller.
      */
     private function storeHeroSheet(Book $book, Character $main): ImageReference
     {
-        $image = $this->generateHeroSheetImage($book, $main);
-        $path = sprintf('books/%d/sheet-%s.png', $book->id, Str::lower(Str::random(8)));
+        $style = $this->effectiveStyle($book);
+
+        $cached = CharacterPortrait::query()
+            ->where('character_id', $main->id)
+            ->where('art_style', $style)
+            ->first();
+
+        if ($cached !== null && MediaDisk::public()->exists($cached->path)) {
+            $book->update(['hero_sheet_path' => $cached->path, 'hero_sheet_prompt' => $cached->prompt]);
+            Log::info('Reusing the cached character portrait as the sheet (no generation).', ['character_id' => $main->id, 'art_style' => $style, 'path' => $cached->path]);
+
+            return new ImageReference($cached->path, "{$main->name} (character sheet)");
+        }
+
+        [$image, $engine] = $this->generateHeroSheetImage($book, $main);
+        $path = sprintf('portraits/%d/%s-%s.png', $main->id, $style, Str::lower(Str::random(8)));
 
         $this->images->storeGenerated($image->bytes, $path);
         $book->update(['hero_sheet_path' => $path, 'hero_sheet_prompt' => $image->prompt]);
 
+        CharacterPortrait::query()->updateOrCreate(
+            ['character_id' => $main->id, 'art_style' => $style],
+            ['path' => $path, 'prompt' => $image->prompt, ...$engine],
+        );
+
         // The replaced file stays on disk as a restorable version.
-        ImageVersion::query()->create(['book_id' => $book->id, 'slot' => 'sheet', 'path' => $path, 'prompt' => $image->prompt, ...$this->currentEngine()]);
+        ImageVersion::query()->create(['book_id' => $book->id, 'slot' => 'sheet', 'path' => $path, 'prompt' => $image->prompt, ...$engine]);
         Log::info('Character sheet stored.', ['path' => $path, 'attempt' => $image->attempt]);
 
         return new ImageReference($path, "{$main->name} (character sheet)");
     }
 
-    private function generateHeroSheetImage(Book $book, Character $main): GeneratedImage
+    /**
+     * The style this run actually draws in: the per-run admin override when
+     * one is active, else the book's stored style.
+     */
+    private function effectiveStyle(Book $book): string
+    {
+        $override = (string) config('cubfable.ai.style_override', '');
+
+        return $override !== '' ? $override : $book->art_style;
+    }
+
+    /**
+     * Generate the sheet image, returning it together with the engine stamp
+     * captured INSIDE the portrait-engine scope (afterwards the main engine
+     * is already restored and the stamp would lie).
+     *
+     * @return array{0: GeneratedImage, 1: array{engine_provider: string, engine_model: string}}
+     */
+    private function generateHeroSheetImage(Book $book, Character $main): array
     {
         ['prompt' => $prompt, 'references' => $references] = $this->imagePrompts->sheet($book, $main);
 
         // The sheet anchors identity for every other image, so it never
         // walks the engine chain: a sheet drawn by a different engine would
         // subtly change the hero's look across the whole book.
-        return $this->safeImages->generate($prompt, $this->sizes->sheetSize(), $references, 'character sheet', new PromptLogContext($book->id, 'character-sheet'), null, false);
+        return $this->withPortraitEngine(fn (): array => [
+            $this->safeImages->generate($prompt, $this->sizes->sheetSize(), $references, 'character sheet', new PromptLogContext($book->id, 'character-sheet'), null, false),
+            $this->currentEngine(),
+        ]);
     }
 
     /**
@@ -622,6 +665,44 @@ class StoryGenerator
      * per-run admin override (EngineOverride) always wins. The original
      * config is restored afterwards so the pages keep their own engine.
      */
+    /**
+     * Run the callback under the dedicated portrait engine when one is
+     * configured: the character sheet is the single image where a strong
+     * stylizer pays off most, since every other image inherits its look.
+     * An explicit per-run admin engine override still wins.
+     *
+     * @param  callable(): array{0: GeneratedImage, 1: array{engine_provider: string, engine_model: string}}  $callback
+     * @return array{0: GeneratedImage, 1: array{engine_provider: string, engine_model: string}}
+     */
+    private function withPortraitEngine(callable $callback): array
+    {
+        $provider = trim((string) config('cubfable.ai.portrait_image_provider'));
+
+        if ($provider === '' || (bool) config('cubfable.ai.engine_override_active')) {
+            return $callback();
+        }
+
+        $model = trim((string) config('cubfable.ai.portrait_image_model'));
+        $modelPath = "cubfable.ai.models.image.{$provider}";
+        $originalProvider = config('cubfable.ai.image_provider');
+        $originalModel = config($modelPath);
+
+        config()->set('cubfable.ai.image_provider', $provider);
+
+        if ($model !== '') {
+            config()->set($modelPath, $model);
+        }
+
+        Log::info('Portrait engine engaged for this character sheet.', ['provider' => $provider, 'model' => $model !== '' ? $model : (string) config($modelPath)]);
+
+        try {
+            return $callback();
+        } finally {
+            config()->set('cubfable.ai.image_provider', $originalProvider);
+            config()->set($modelPath, $originalModel);
+        }
+    }
+
     private function withCoverEngine(callable $callback): void
     {
         $provider = trim((string) config('cubfable.ai.cover_image_provider'));

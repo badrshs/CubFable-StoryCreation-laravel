@@ -105,6 +105,8 @@ class SettingController extends Controller
             'image_aspect_ratio' => ['required', Rule::in(ImageSizePolicy::selectableRatios())],
             'cover_image_provider' => ['nullable', 'in:openai,gemini,openrouter,flow,grok,piapi,replicate'],
             'cover_image_model' => ['nullable', 'string', 'max:200'],
+            'portrait_image_provider' => ['nullable', 'in:openai,gemini,openrouter,flow,grok,piapi,replicate'],
+            'portrait_image_model' => ['nullable', 'string', 'max:200'],
             'pdf_page_size' => ['required', Rule::in(PageSize::keys())],
             'pdf_image_fit' => ['required', 'in:crop,full,overlay'],
             'photo_upload_quality' => ['required', 'in:original,optimized'],
@@ -125,6 +127,10 @@ class SettingController extends Controller
         // The cover engine is optional too; empty means "same as main engine".
         $validated['cover_image_provider'] = (string) ($validated['cover_image_provider'] ?? '');
         $validated['cover_image_model'] = (string) ($validated['cover_image_model'] ?? '');
+
+        // Same for the portrait (character sheet) engine.
+        $validated['portrait_image_provider'] = (string) ($validated['portrait_image_provider'] ?? '');
+        $validated['portrait_image_model'] = (string) ($validated['portrait_image_model'] ?? '');
 
         // Font specs are optional; empty means inherit (language -> default
         // -> automatic per-style face).
