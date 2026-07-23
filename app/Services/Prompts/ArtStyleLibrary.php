@@ -67,6 +67,15 @@ class ArtStyleLibrary
             'reinforcement' => 'One artist painted the whole scene in the same watercolor session: same washes, same paper, same light touch.',
             'adaptation' => 'The reference photos only show who each character is: paint that person as a brand-new watercolor character in loose translucent washes - never photographic, and dressed to fit the scene, never in the clothes from the photo.',
         ],
+        'soft-digital' => [
+            'descriptor' => 'polished soft-edged digital storybook illustration: smooth gentle shading with a fine matte grain, rounded friendly shapes, warm golden domestic light, tidy lovingly detailed environments, calm pastel-leaning palette, heartwarming modern picture-book feel',
+            'antiDrift' => [
+                'Everything keeps the same soft polished digital-illustration finish: gentle gradients, clean soft edges, a quiet matte texture over every surface.',
+                'Soft and illustrative throughout, never photorealistic, never a harsh 3D render, never rough traditional media.',
+            ],
+            'reinforcement' => 'Every element shares the same soft digital illustration: one artist, one warm light, one cohesive picture-book scene.',
+            'adaptation' => 'The reference photos only show who each character is: redraw that person as a soft digital storybook character - never photographic, and dressed to fit the scene, never in the clothes from the photo.',
+        ],
         'crayon' => [
             'descriptor' => "child's crayon and colored-pencil drawing: waxy expressive strokes with visible pressure changes, construction-paper tooth showing through the color, wobbly charming outlines, bright primary colors filled in with joyful scribble energy",
             'antiDrift' => [

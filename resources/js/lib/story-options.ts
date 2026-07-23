@@ -9,6 +9,7 @@ export const ART_STYLES: ArtStyle[] = [
     'cartoon',
     'storybook',
     'watercolor',
+    'soft-digital',
     'soft-anime',
     'comic-book',
 ];

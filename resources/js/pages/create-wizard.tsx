@@ -82,6 +82,8 @@ const ART_STYLE_SWATCHES: Record<string, string> = {
     'felt-craft': 'linear-gradient(135deg, hsl(160 46% 62%), hsl(320 58% 72%))',
     'paper-lightbox':
         'linear-gradient(135deg, hsl(232 56% 46%), hsl(42 92% 66%))',
+    'soft-digital':
+        'linear-gradient(135deg, hsl(36 85% 72%), hsl(210 60% 76%))',
     'soft-anime': 'linear-gradient(135deg, hsl(280 60% 74%), hsl(199 80% 74%))',
     'comic-book': 'linear-gradient(135deg, hsl(220 70% 58%), hsl(42 95% 66%))',
 };

@@ -183,7 +183,7 @@ Admins have their own section of the site with:
 
 ## 8. Art styles and image engines (business view)
 
-- Customers choose from **six art styles**: 3D animation, cartoon, storybook, watercolor, soft anime, comic book. Four more exist in the internal library (crayon, clay animation, felt craft, paper lightbox) and several legacy styles are kept alive only so older books still render correctly.
+- Customers choose from **seven art styles**: 3D animation, cartoon, storybook, watercolor, soft digital (a polished, soft-edged modern digital picture-book look with warm domestic light), soft anime, comic book. Four more exist in the internal library (crayon, clay animation, felt craft, paper lightbox) and several legacy styles are kept alive only so older books still render correctly.
 - Each style is defined with a rich description of the medium, rules about what the style must NOT drift into, and instructions for adapting a real photo into that style.
 - **Seven image engines** are supported, and each has different capabilities (for example, how many reference photos it can accept: some take none, some one, some up to six). The system automatically adapts: characters whose photo cannot be attached get a detailed written description instead, so every engine still produces consistent characters.
 - The "Flow" engine is special: it is a locally-run browser gateway that drives Grok Imagine or Google Flow through a real browser session, keeping one whole book inside a single conversation for maximum visual consistency.
