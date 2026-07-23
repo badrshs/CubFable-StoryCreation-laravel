@@ -197,6 +197,47 @@ class GenerateStorybookJobTest extends TestCase
         }
     }
 
+    public function test_a_malformed_story_response_is_retried_before_failing(): void
+    {
+        $book = $this->pendingBookWithCast();
+
+        // First text call returns unparseable prose; the retry returns a valid
+        // blueprint, so the book completes instead of failing.
+        Http::fake([
+            'api.openai.com/v1/chat/completions' => Http::sequence()
+                ->push(['choices' => [['message' => ['content' => 'Sorry, here is your story!']]], 'usage' => ['total_tokens' => 10]])
+                ->push($this->storyChatResponse()),
+            'api.openai.com/v1/images/generations' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+            'api.openai.com/v1/images/edits' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+        ]);
+
+        (new GenerateStorybookJob($book->id))->handle(app(StoryGenerator::class));
+
+        $this->assertSame(BookStatus::Complete, $book->refresh()->status);
+        // Two text calls happened: the failed one and the successful retry.
+        $this->assertSame(2, Http::recorded(fn (Request $request): bool => str_contains($request->url(), 'chat/completions'))->count());
+    }
+
+    public function test_a_story_response_wrapped_in_a_code_fence_is_parsed(): void
+    {
+        $book = $this->pendingBookWithCast();
+        // Wrap the real blueprint JSON in a markdown fence.
+        $blueprintJson = (string) $this->storyChatResponse()['choices'][0]['message']['content'];
+
+        Http::fake([
+            'api.openai.com/v1/chat/completions' => Http::response([
+                'choices' => [['message' => ['content' => "```json\n{$blueprintJson}\n```"]]],
+                'usage' => ['total_tokens' => 300],
+            ]),
+            'api.openai.com/v1/images/generations' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+            'api.openai.com/v1/images/edits' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]),
+        ]);
+
+        (new GenerateStorybookJob($book->id))->handle(app(StoryGenerator::class));
+
+        $this->assertSame(BookStatus::Complete, $book->refresh()->status);
+    }
+
     public function test_a_failed_regeneration_never_downgrades_a_page_that_has_an_image(): void
     {
         $book = $this->pendingBookWithCast();

@@ -359,9 +359,23 @@ class StoryGenerator
      */
     private function generateStoryBlueprint(Book $book, int $pageCount, Collection $cast, Character $main, ?Template $template = null): array
     {
-        $content = $this->ai->generateText($this->storyPrompts->authorPrompt($book, $pageCount, $cast, $main, $template));
+        $prompt = $this->storyPrompts->authorPrompt($book, $pageCount, $cast, $main, $template);
 
-        return $this->parseBlueprint($content, $pageCount);
+        // Text models occasionally return prose or malformed/truncated JSON
+        // that the blueprint parser rejects. One retry turns those flaky
+        // one-offs into a success instead of failing the whole paid book.
+        $lastException = null;
+
+        for ($attempt = 1; $attempt <= 2; $attempt++) {
+            try {
+                return $this->parseBlueprint($this->ai->generateText($prompt), $pageCount);
+            } catch (RuntimeException $exception) {
+                $lastException = $exception;
+                Log::warning("Story blueprint could not be parsed (attempt {$attempt}/2): {$exception->getMessage()}");
+            }
+        }
+
+        throw $lastException ?? new RuntimeException('Invalid story text response');
     }
 
     /**
@@ -418,6 +432,10 @@ class StoryGenerator
     private function parseBlueprint(string $content, int $pageCount): array
     {
         $parsed = null;
+
+        // Some models wrap the JSON in a markdown code fence; strip it so the
+        // brace/bracket match below sees clean JSON.
+        $content = (string) preg_replace('/```(?:json)?/i', '', $content);
 
         if (preg_match('/\{[\s\S]*\}/', $content, $matches) === 1) {
             $decoded = json_decode($matches[0], true);
