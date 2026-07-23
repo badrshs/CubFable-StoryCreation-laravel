@@ -565,31 +565,36 @@ class StoryGenerator
      * book using that character shares. The book is never touched: no page,
      * no cover, not even the book's own sheet pointer changes here.
      */
-    public function regenerateCharacterPortrait(Book $book): void
+    public function regenerateCharacterPortrait(Book $book, ?int $characterId = null): void
     {
         try {
             $this->startFlowSession($book);
             $cast = $this->castFor($book);
             $this->ensureCast($cast, $book->art_style);
-            $main = $this->mainCharacter($cast);
 
-            if ($main === null) {
-                throw new RuntimeException('Book has no characters');
+            // Any cast member can have a portrait, not just the hero; default
+            // to the main character when none is named.
+            $target = $characterId !== null
+                ? $cast->firstWhere('id', $characterId)
+                : $this->mainCharacter($cast);
+
+            if ($target === null) {
+                throw new RuntimeException('Character is not part of this book.');
             }
 
             $style = $this->effectiveStyle($book);
-            [$image, $engine] = $this->generateHeroSheetImage($book, $main);
-            $path = sprintf('portraits/%d/%s-%s.png', $main->id, $style, Str::lower(Str::random(8)));
+            [$image, $engine] = $this->generateHeroSheetImage($book, $target);
+            $path = sprintf('portraits/%d/%s-%s.png', $target->id, $style, Str::lower(Str::random(8)));
             $this->images->storeGenerated($image->bytes, $path);
 
             // Only the character's portrait is updated (shared across every
             // book that uses this character). The book stays exactly as it is.
             CharacterPortrait::query()->updateOrCreate(
-                ['character_id' => $main->id, 'art_style' => $style],
+                ['character_id' => $target->id, 'art_style' => $style],
                 ['path' => $path, 'prompt' => $image->prompt, ...$engine],
             );
 
-            Log::info('Character portrait regenerated.', ['character_id' => $main->id, 'art_style' => $style, 'path' => $path]);
+            Log::info('Character portrait regenerated.', ['character_id' => $target->id, 'art_style' => $style, 'path' => $path]);
         } catch (Throwable $exception) {
             Log::error("Failed to regenerate the character portrait for book {$book->id}: {$exception->getMessage()}");
         } finally {

@@ -10,6 +10,7 @@ use App\Jobs\RegenerateCharacterPortraitJob;
 use App\Jobs\RegenerateCoverJob;
 use App\Jobs\RegeneratePageJob;
 use App\Models\Book;
+use App\Models\Character;
 use App\Models\ImagePrompt;
 use App\Models\ImageVersion;
 use App\Models\Page;
@@ -91,10 +92,15 @@ class BookController extends Controller
 
         $pageNumbers = $book->pages->pluck('page_number', 'id');
 
-        // The main character's saved portrait for this book's style, if drawn.
-        // It lives on the character and is shared by every book that uses it.
-        $mainCharacter = $book->characters->firstWhere('pivot.is_main', true) ?? $book->characters->first();
-        $portrait = $mainCharacter?->portraits->firstWhere('art_style', $book->art_style);
+        // Each cast member's saved portrait for this book's style, if drawn.
+        // Portraits live on the character and are shared by every book that
+        // uses them; the whole cast is listed so any can be regenerated.
+        $cast = $book->characters->map(fn (Character $character): array => [
+            'id' => $character->id,
+            'name' => $character->name,
+            'isMain' => (bool) ($character->pivot?->is_main ?? false),
+            'portraitUrl' => $character->portraits->firstWhere('art_style', $book->art_style)?->url,
+        ])->values()->all();
 
         $journal = ImagePrompt::query()
             ->where('book_id', $book->id)
@@ -175,9 +181,8 @@ class BookController extends Controller
                     'status' => $page->status->value,
                     'imageUrl' => $page->image_url,
                 ])->all(),
-                // The shared character portrait (main character, this style).
-                'mainCharacterName' => $mainCharacter?->name,
-                'characterPortraitUrl' => $portrait?->url,
+                // The shared character portraits (per cast member, this style).
+                'cast' => $cast,
             ],
             'journal' => $journal,
             'artStyles' => array_column(ArtStyle::cases(), 'value'),
@@ -286,6 +291,8 @@ class BookController extends Controller
             'provider' => ['nullable', 'in:openai,gemini,openrouter,flow,grok,piapi,replicate'],
             'model' => ['nullable', 'string', 'max:200'],
             'artStyle' => ['nullable', Rule::enum(ArtStyle::class)],
+            // Which cast member's portrait to regenerate; defaults to the hero.
+            'characterId' => ['nullable', 'integer', Rule::exists('book_characters', 'character_id')->where('book_id', $book->id)],
         ]);
 
         Log::info('Admin queued a character portrait regeneration.', array_filter([
@@ -293,6 +300,7 @@ class BookController extends Controller
             'provider' => $validated['provider'] ?? null,
             'model' => $validated['model'] ?? null,
             'art_style' => $validated['artStyle'] ?? null,
+            'character_id' => $validated['characterId'] ?? null,
         ]));
 
         RegenerateCharacterPortraitJob::dispatch(
@@ -300,6 +308,7 @@ class BookController extends Controller
             $validated['provider'] ?? null,
             $validated['model'] ?? null,
             $validated['artStyle'] ?? null,
+            isset($validated['characterId']) ? (int) $validated['characterId'] : null,
         );
 
         return back();

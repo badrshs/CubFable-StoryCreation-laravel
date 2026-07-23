@@ -30,6 +30,7 @@ class RegenerateCharacterPortraitJob implements ShouldQueue
         public ?string $imageProvider = null,
         public ?string $imageModel = null,
         public ?string $artStyle = null,
+        public ?int $characterId = null,
     ) {}
 
     public function handle(StoryGenerator $generator, BookStopSignal $stopSignal): void
@@ -49,7 +50,7 @@ class RegenerateCharacterPortraitJob implements ShouldQueue
         EngineOverride::apply($this->imageProvider, $this->imageModel);
         StyleOverride::apply($this->artStyle);
 
-        $generator->regenerateCharacterPortrait($book);
+        $generator->regenerateCharacterPortrait($book, $this->characterId);
     }
 
     public function failed(?Throwable $exception): void

@@ -445,6 +445,49 @@ class CharacterPortraitTest extends TestCase
         $this->assertNotSame("characters/{$main->id}/photo.jpg", $captured['anchor']->path);
     }
 
+    public function test_a_supporting_characters_portrait_can_be_regenerated_by_id(): void
+    {
+        config()->set('cubfable.ai.identity_reference', 'sheet');
+
+        $user = User::factory()->create();
+        $template = Template::factory()->create(['page_count' => 1]);
+        $main = $this->makeCharacter($user);
+        $sidekick = Character::factory()->for($user)->create([
+            'name' => 'Robo',
+            'appearance' => 'A small round robot.',
+        ]);
+        Storage::disk('public')->put("characters/{$sidekick->id}/photo.jpg", (string) base64_decode(self::PNG_BASE64, true));
+        $sidekick->update(['photo_path' => "characters/{$sidekick->id}/photo.jpg"]);
+
+        $book = Book::factory()->complete()->for($user)->for($template)->create(['art_style' => 'watercolor']);
+        $book->characters()->attach($main->id, ['is_main' => true, 'sort_order' => 0]);
+        $book->characters()->attach($sidekick->id, ['is_main' => false, 'sort_order' => 1]);
+
+        Http::fake(['api.openai.com/*' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]])]);
+
+        (new RegenerateCharacterPortraitJob($book->id, null, null, null, $sidekick->id))
+            ->handle(app(StoryGenerator::class), app(BookStopSignal::class));
+
+        // Only the sidekick's portrait was created, not the hero's.
+        $this->assertSame(1, CharacterPortrait::query()->where('character_id', $sidekick->id)->where('art_style', 'watercolor')->count());
+        $this->assertSame(0, CharacterPortrait::query()->where('character_id', $main->id)->count());
+    }
+
+    public function test_a_character_from_another_book_cannot_be_targeted(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $owner = User::factory()->create();
+        $template = Template::factory()->create(['page_count' => 1]);
+
+        $book = Book::factory()->complete()->for($owner)->for($template)->create();
+        $stranger = Character::factory()->for($owner)->create(['name' => 'Stranger']);
+
+        $this->actingAs($admin)
+            ->from("/admin/books/{$book->id}")
+            ->post("/admin/books/{$book->id}/portrait/regenerate", ['characterId' => $stranger->id])
+            ->assertSessionHasErrors('characterId');
+    }
+
     public function test_the_library_lists_portraits(): void
     {
         $user = User::factory()->create();

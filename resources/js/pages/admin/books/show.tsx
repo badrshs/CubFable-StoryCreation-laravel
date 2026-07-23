@@ -87,8 +87,12 @@ type Props = {
             status: string;
             imageUrl: string | null;
         }[];
-        mainCharacterName: string | null;
-        characterPortraitUrl: string | null;
+        cast: {
+            id: number;
+            name: string;
+            isMain: boolean;
+            portraitUrl: string | null;
+        }[];
     };
     journal: JournalEntry[];
     artStyles: string[];
@@ -316,12 +320,16 @@ export default function AdminBookShow({
     // one-off art style and Replicate model chosen for it. Both default to
     // "as the book is now" / "current settings". Replicate models only.
     const [regenTarget, setRegenTarget] = useState<string | null>(null);
+    const [regenCharacterId, setRegenCharacterId] = useState<number | null>(
+        null,
+    );
     const [regenStyle, setRegenStyle] = useState(book.artStyle);
     const [regenModel, setRegenModel] = useState('default');
 
     const replicateModels = engines.replicate ?? [];
 
-    const openRegenerate = (target: string) => {
+    const openRegenerate = (target: string, characterId: number | null = null) => {
+        setRegenCharacterId(characterId);
         // Preselect the last choice when it is still valid, else the defaults
         // (the book's own style / current engine settings).
         const savedStyle = readStored(REGEN_STYLE_KEY);
@@ -364,7 +372,12 @@ export default function AdminBookShow({
         // The character portrait is not a book image: it updates the shared
         // character, so it posts to its own endpoint with no book image target.
         if (regenTarget === 'portrait') {
-            act('portrait/regenerate', engineAndStyle);
+            act('portrait/regenerate', {
+                ...engineAndStyle,
+                ...(regenCharacterId !== null
+                    ? { characterId: String(regenCharacterId) }
+                    : {}),
+            });
         } else {
             act('images/regenerate', {
                 target: regenTarget,
@@ -788,61 +801,65 @@ export default function AdminBookShow({
                     </Card>
                 </div>
 
-                {/* The character's shared portrait. Regenerating it updates
-                    the character (used by every book of theirs), and touches
-                    no page or cover of any book. */}
+                {/* The shared character portraits, one per cast member.
+                    Regenerating one updates that character (used by every book
+                    of theirs) and touches no page or cover of any book. */}
                 <Card>
                     <CardHeader>
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                                <CardTitle>Character portrait</CardTitle>
-                                <CardDescription>
-                                    The stylized reference for{' '}
-                                    {book.mainCharacterName ?? 'the main character'}
-                                    , shared by every book that uses this
-                                    character. Regenerating updates the
-                                    character only, never this book's pages or
-                                    cover.
-                                </CardDescription>
-                            </div>
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => openRegenerate('portrait')}
-                            >
-                                <RotateCcw className="h-4 w-4" /> Regenerate
-                                portrait
-                            </Button>
-                        </div>
+                        <CardTitle>Character portraits</CardTitle>
+                        <CardDescription>
+                            The stylized reference for each character in the{' '}
+                            {book.artStyle} style, shared by every book that
+                            uses them. Regenerating one updates the character
+                            only, never this book's pages or cover.
+                        </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <div className="w-40">
-                            <div className="aspect-[3/4] overflow-hidden rounded-md border border-card-border bg-muted">
-                                {book.characterPortraitUrl ? (
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            openImage(
-                                                String(
-                                                    book.characterPortraitUrl,
-                                                ),
-                                            )
-                                        }
-                                        className="block h-full w-full cursor-zoom-in focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
-                                    >
-                                        <img
-                                            src={book.characterPortraitUrl}
-                                            alt="Character portrait"
-                                            className="h-full w-full object-cover transition-transform hover:scale-105"
-                                        />
-                                    </button>
-                                ) : (
-                                    <div className="flex h-full w-full items-center justify-center p-2 text-center text-xs text-muted-foreground">
-                                        No portrait yet for the{' '}
-                                        {book.artStyle} style
+                        <div className="flex flex-wrap gap-4">
+                            {book.cast.map((member) => (
+                                <div key={member.id} className="w-40">
+                                    <div className="aspect-[3/4] overflow-hidden rounded-md border border-card-border bg-muted">
+                                        {member.portraitUrl ? (
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    openImage(
+                                                        String(
+                                                            member.portraitUrl,
+                                                        ),
+                                                    )
+                                                }
+                                                className="block h-full w-full cursor-zoom-in focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+                                            >
+                                                <img
+                                                    src={member.portraitUrl}
+                                                    alt={`${member.name} portrait`}
+                                                    className="h-full w-full object-cover transition-transform hover:scale-105"
+                                                />
+                                            </button>
+                                        ) : (
+                                            <div className="flex h-full w-full items-center justify-center p-2 text-center text-xs text-muted-foreground">
+                                                No portrait yet
+                                            </div>
+                                        )}
                                     </div>
-                                )}
-                            </div>
+                                    <p className="mt-1 truncate text-center text-xs font-medium text-foreground">
+                                        {member.name}
+                                        {member.isMain && ' (hero)'}
+                                    </p>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="mt-1 w-full"
+                                        onClick={() =>
+                                            openRegenerate('portrait', member.id)
+                                        }
+                                    >
+                                        <RotateCcw className="h-3.5 w-3.5" />{' '}
+                                        Regenerate
+                                    </Button>
+                                </div>
+                            ))}
                         </div>
                     </CardContent>
                 </Card>
