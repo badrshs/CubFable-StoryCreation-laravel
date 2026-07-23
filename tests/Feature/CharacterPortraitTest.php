@@ -4,12 +4,14 @@ namespace Tests\Feature;
 
 use App\Enums\BookStatus;
 use App\Jobs\GenerateStorybookJob;
+use App\Jobs\RegenerateCharacterPortraitJob;
 use App\Models\Book;
 use App\Models\Character;
 use App\Models\CharacterPortrait;
 use App\Models\ImageVersion;
 use App\Models\Template;
 use App\Models\User;
+use App\Services\BookStopSignal;
 use App\Services\StoryGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -213,6 +215,68 @@ class CharacterPortraitTest extends TestCase
         // it as its sheet.
         $this->assertSame(0, CharacterPortrait::query()->count());
         Storage::disk('public')->assertExists($path);
+    }
+
+    public function test_admin_can_regenerate_the_character_portrait_without_touching_the_book(): void
+    {
+        config()->set('cubfable.ai.identity_reference', 'sheet');
+
+        $user = User::factory()->create();
+        $template = Template::factory()->create(['page_count' => 1]);
+        $character = $this->makeCharacter($user);
+        $this->fakeOpenAi();
+
+        // Generate the book once so it has a cover, a page, and a portrait.
+        $book = $this->pendingBook($user, $template, $character, 'watercolor');
+        (new GenerateStorybookJob($book->id))->handle(app(StoryGenerator::class));
+        $book->refresh();
+
+        $originalCover = $book->cover_image_path;
+        $originalSheet = $book->hero_sheet_path;
+        $originalPage = $book->pages()->first()->image_path;
+        $originalPortraitPath = CharacterPortrait::query()->sole()->path;
+
+        // Regenerate only the character portrait.
+        (new RegenerateCharacterPortraitJob($book->id))
+            ->handle(app(StoryGenerator::class), app(BookStopSignal::class));
+
+        $book->refresh();
+
+        // The character's portrait is replaced (shared across their books)...
+        $portrait = CharacterPortrait::query()->sole();
+        $this->assertNotSame($originalPortraitPath, $portrait->path);
+        $this->assertSame($character->id, $portrait->character_id);
+
+        // ...but the book is untouched: same cover, same page, same sheet
+        // pointer, no extra page/cover work.
+        $this->assertSame($originalCover, $book->cover_image_path);
+        $this->assertSame($originalSheet, $book->hero_sheet_path);
+        $this->assertSame($originalPage, $book->pages()->first()->image_path);
+    }
+
+    public function test_the_regenerated_portrait_is_shared_by_a_second_book_of_the_same_character(): void
+    {
+        config()->set('cubfable.ai.identity_reference', 'sheet');
+
+        $user = User::factory()->create();
+        $template = Template::factory()->create(['page_count' => 1]);
+        $character = $this->makeCharacter($user);
+        $this->fakeOpenAi();
+
+        $bookA = $this->pendingBook($user, $template, $character, 'watercolor');
+        (new GenerateStorybookJob($bookA->id))->handle(app(StoryGenerator::class));
+
+        (new RegenerateCharacterPortraitJob($bookA->id))
+            ->handle(app(StoryGenerator::class), app(BookStopSignal::class));
+        $sharedPath = CharacterPortrait::query()->sole()->path;
+
+        // A second book with the same character in the same style anchors to
+        // the regenerated portrait (cache hit, no new portrait row).
+        $bookB = $this->pendingBook($user, $template, $character, 'watercolor');
+        (new GenerateStorybookJob($bookB->id))->handle(app(StoryGenerator::class));
+
+        $this->assertSame($sharedPath, $bookB->refresh()->hero_sheet_path);
+        $this->assertSame(1, CharacterPortrait::query()->count());
     }
 
     public function test_the_library_lists_portraits(): void

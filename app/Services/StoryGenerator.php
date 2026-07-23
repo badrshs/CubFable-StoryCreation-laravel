@@ -548,6 +548,54 @@ class StoryGenerator
             return new ImageReference($cached->path, "{$main->name} (character sheet)");
         }
 
+        return $this->drawAndStoreHeroSheet($book, $main, $style);
+    }
+
+    /**
+     * Regenerate the main character's PORTRAIT only. Draws a fresh sheet and
+     * overwrites the character's saved portrait for this style, which every
+     * book using that character shares. The book is never touched: no page,
+     * no cover, not even the book's own sheet pointer changes here.
+     */
+    public function regenerateCharacterPortrait(Book $book): void
+    {
+        try {
+            $this->startFlowSession($book);
+            $cast = $this->castFor($book);
+            $this->ensureCast($cast, $book->art_style);
+            $main = $this->mainCharacter($cast);
+
+            if ($main === null) {
+                throw new RuntimeException('Book has no characters');
+            }
+
+            $style = $this->effectiveStyle($book);
+            [$image, $engine] = $this->generateHeroSheetImage($book, $main);
+            $path = sprintf('portraits/%d/%s-%s.png', $main->id, $style, Str::lower(Str::random(8)));
+            $this->images->storeGenerated($image->bytes, $path);
+
+            // Only the character's portrait is updated (shared across every
+            // book that uses this character). The book stays exactly as it is.
+            CharacterPortrait::query()->updateOrCreate(
+                ['character_id' => $main->id, 'art_style' => $style],
+                ['path' => $path, 'prompt' => $image->prompt, ...$engine],
+            );
+
+            Log::info('Character portrait regenerated.', ['character_id' => $main->id, 'art_style' => $style, 'path' => $path]);
+        } catch (Throwable $exception) {
+            Log::error("Failed to regenerate the character portrait for book {$book->id}: {$exception->getMessage()}");
+        } finally {
+            $this->usage->flush($book->id);
+        }
+    }
+
+    /**
+     * Draw a fresh sheet, store it under the character's portrait folder,
+     * point the book at it, cache it as the character's portrait for this
+     * style, and record a restorable version. Used during a full book run.
+     */
+    private function drawAndStoreHeroSheet(Book $book, Character $main, string $style): ImageReference
+    {
         [$image, $engine] = $this->generateHeroSheetImage($book, $main);
         $path = sprintf('portraits/%d/%s-%s.png', $main->id, $style, Str::lower(Str::random(8)));
 

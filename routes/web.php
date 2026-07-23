@@ -61,6 +61,7 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
     Route::post('books/{id}/restart', [Admin\BookController::class, 'restart'])->whereNumber('id')->name('admin.books.restart');
     Route::post('books/{id}/stop', [Admin\BookController::class, 'stop'])->whereNumber('id')->name('admin.books.stop');
     Route::post('books/{id}/images/regenerate', [Admin\BookController::class, 'regenerateImage'])->whereNumber('id')->name('admin.books.images.regenerate');
+    Route::post('books/{id}/portrait/regenerate', [Admin\BookController::class, 'regeneratePortrait'])->whereNumber('id')->name('admin.books.portrait.regenerate');
     Route::post('books/{id}/images/restore', [Admin\BookController::class, 'restoreImage'])->whereNumber('id')->name('admin.books.images.restore');
     Route::get('books/{id}/log', [Admin\BookController::class, 'log'])->whereNumber('id')->name('admin.books.log');
     Route::post('books/{id}/heal', [Admin\BookController::class, 'heal'])->whereNumber('id')->name('admin.books.heal');

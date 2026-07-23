@@ -87,6 +87,8 @@ type Props = {
             status: string;
             imageUrl: string | null;
         }[];
+        mainCharacterName: string | null;
+        characterPortraitUrl: string | null;
     };
     journal: JournalEntry[];
     artStyles: string[];
@@ -352,14 +354,23 @@ export default function AdminBookShow({
         }
 
         const chosen = replicateModels.find((m) => m.model === regenModel);
-
-        act('images/regenerate', {
-            target: regenTarget,
+        const engineAndStyle = {
             ...(chosen
                 ? { provider: chosen.provider, model: chosen.model }
                 : {}),
             ...(regenStyle !== book.artStyle ? { artStyle: regenStyle } : {}),
-        });
+        };
+
+        // The character portrait is not a book image: it updates the shared
+        // character, so it posts to its own endpoint with no book image target.
+        if (regenTarget === 'portrait') {
+            act('portrait/regenerate', engineAndStyle);
+        } else {
+            act('images/regenerate', {
+                target: regenTarget,
+                ...engineAndStyle,
+            });
+        }
 
         setRegenTarget(null);
     };
@@ -777,6 +788,65 @@ export default function AdminBookShow({
                     </Card>
                 </div>
 
+                {/* The character's shared portrait. Regenerating it updates
+                    the character (used by every book of theirs), and touches
+                    no page or cover of any book. */}
+                <Card>
+                    <CardHeader>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                                <CardTitle>Character portrait</CardTitle>
+                                <CardDescription>
+                                    The stylized reference for{' '}
+                                    {book.mainCharacterName ?? 'the main character'}
+                                    , shared by every book that uses this
+                                    character. Regenerating updates the
+                                    character only, never this book's pages or
+                                    cover.
+                                </CardDescription>
+                            </div>
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openRegenerate('portrait')}
+                            >
+                                <RotateCcw className="h-4 w-4" /> Regenerate
+                                portrait
+                            </Button>
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="w-40">
+                            <div className="aspect-[3/4] overflow-hidden rounded-md border border-card-border bg-muted">
+                                {book.characterPortraitUrl ? (
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            openImage(
+                                                String(
+                                                    book.characterPortraitUrl,
+                                                ),
+                                            )
+                                        }
+                                        className="block h-full w-full cursor-zoom-in focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+                                    >
+                                        <img
+                                            src={book.characterPortraitUrl}
+                                            alt="Character portrait"
+                                            className="h-full w-full object-cover transition-transform hover:scale-105"
+                                        />
+                                    </button>
+                                ) : (
+                                    <div className="flex h-full w-full items-center justify-center p-2 text-center text-xs text-muted-foreground">
+                                        No portrait yet for the{' '}
+                                        {book.artStyle} style
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
                 {versions.length > 0 && (
                     <Card>
                         <CardHeader>
@@ -900,12 +970,14 @@ export default function AdminBookShow({
                             Regenerate{' '}
                             {regenTarget === 'cover'
                                 ? 'the cover'
-                                : regenTarget?.replace('page-', 'page ')}
+                                : regenTarget === 'portrait'
+                                  ? 'the character portrait'
+                                  : regenTarget?.replace('page-', 'page ')}
                         </DialogTitle>
                         <DialogDescription>
-                            Only this image is regenerated. The book keeps its
-                            saved style, every other image is untouched, and the
-                            current image stays available as a version.
+                            {regenTarget === 'portrait'
+                                ? 'Redraws the character portrait and updates it on the character itself, so every book that uses this character shares the new one. No page or cover of any book is touched.'
+                                : 'Only this image is regenerated. The book keeps its saved style, every other image is untouched, and the current image stays available as a version.'}
                         </DialogDescription>
                     </DialogHeader>
 

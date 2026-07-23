@@ -6,6 +6,7 @@ use App\Enums\ArtStyle;
 use App\Enums\BookStatus;
 use App\Enums\PageStatus;
 use App\Http\Controllers\Controller;
+use App\Jobs\RegenerateCharacterPortraitJob;
 use App\Jobs\RegenerateCoverJob;
 use App\Jobs\RegeneratePageJob;
 use App\Models\Book;
@@ -86,9 +87,14 @@ class BookController extends Controller
      */
     public function show(int $id, ReplicateModelCatalog $catalog): Response
     {
-        $book = Book::query()->with(['user:id,name,email', 'pages'])->findOrFail($id);
+        $book = Book::query()->with(['user:id,name,email', 'pages', 'characters.portraits'])->findOrFail($id);
 
         $pageNumbers = $book->pages->pluck('page_number', 'id');
+
+        // The main character's saved portrait for this book's style, if drawn.
+        // It lives on the character and is shared by every book that uses it.
+        $mainCharacter = $book->characters->firstWhere('pivot.is_main', true) ?? $book->characters->first();
+        $portrait = $mainCharacter?->portraits->firstWhere('art_style', $book->art_style);
 
         $journal = ImagePrompt::query()
             ->where('book_id', $book->id)
@@ -169,6 +175,9 @@ class BookController extends Controller
                     'status' => $page->status->value,
                     'imageUrl' => $page->image_url,
                 ])->all(),
+                // The shared character portrait (main character, this style).
+                'mainCharacterName' => $mainCharacter?->name,
+                'characterPortraitUrl' => $portrait?->url,
             ],
             'journal' => $journal,
             'artStyles' => array_column(ArtStyle::cases(), 'value'),
@@ -259,6 +268,39 @@ class BookController extends Controller
 
         $page->update(['status' => PageStatus::Generating]);
         RegeneratePageJob::dispatch($page->id, $provider, $model, $artStyle);
+
+        return back();
+    }
+
+    /**
+     * Regenerate the main character's PORTRAIT from a book page. This updates
+     * only the character's saved portrait (shared by every book that uses
+     * that character); no page or cover of any book is touched. An optional
+     * engine and art-style apply to this run.
+     */
+    public function regeneratePortrait(Request $request, int $id): RedirectResponse
+    {
+        $book = Book::query()->findOrFail($id);
+
+        $validated = $request->validate([
+            'provider' => ['nullable', 'in:openai,gemini,openrouter,flow,grok,piapi,replicate'],
+            'model' => ['nullable', 'string', 'max:200'],
+            'artStyle' => ['nullable', Rule::enum(ArtStyle::class)],
+        ]);
+
+        Log::info('Admin queued a character portrait regeneration.', array_filter([
+            'book_id' => $book->id,
+            'provider' => $validated['provider'] ?? null,
+            'model' => $validated['model'] ?? null,
+            'art_style' => $validated['artStyle'] ?? null,
+        ]));
+
+        RegenerateCharacterPortraitJob::dispatch(
+            $book->id,
+            $validated['provider'] ?? null,
+            $validated['model'] ?? null,
+            $validated['artStyle'] ?? null,
+        );
 
         return back();
     }
