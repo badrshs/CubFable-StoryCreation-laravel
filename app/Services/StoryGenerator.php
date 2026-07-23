@@ -130,6 +130,12 @@ class StoryGenerator
                 ? ($this->anchorFor($book) ?? $this->prepareHeroSheet($book, $main))
                 : null;
 
+            // Every cast member follows the same rule as the hero: a
+            // photographed supporting character is drawn once as a stylized
+            // portrait (cached per character + style) and referenced by that
+            // instead of the raw photo. Keyed by character id.
+            $castPortraits = $this->castPortraits($book, $cast, $main, $anchor);
+
             // Cover (generated WITH the title; the decorative frame is added
             // in the UI). Skipped when a previous run already produced one.
             // A cover every engine refuses on content grounds is parked for
@@ -153,7 +159,7 @@ class StoryGenerator
 
             if (count($pending) === count($pages) && $this->groupGenerationAvailable(count($pages))) {
                 try {
-                    $this->storePagesAsGroup($book, $pages, $cast, $main, $anchor);
+                    $this->storePagesAsGroup($book, $pages, $cast, $main, $anchor, $castPortraits);
                 } catch (Throwable $exception) {
                     Log::warning("Group generation failed; falling back to page-by-page: {$exception->getMessage()}");
                 }
@@ -172,7 +178,7 @@ class StoryGenerator
                 $this->abortIfStopRequested($book);
 
                 try {
-                    $this->storePageIllustration($page, $book, $cast, $main, $anchor);
+                    $this->storePageIllustration($page, $book, $cast, $main, $anchor, $castPortraits);
                 } catch (ImageFlaggedSensitiveException $exception) {
                     Log::error("Page {$page->page_number} flagged as sensitive by every engine: {$exception->getMessage()}");
                     $page->update(['status' => PageStatus::Failed, 'flagged_at' => now()]);
@@ -221,7 +227,9 @@ class StoryGenerator
                 throw new RuntimeException('Book has no characters');
             }
 
-            $this->storePageIllustration($page, $book, $cast, $main, $this->references->anchorsWithSheet($main) ? $this->anchorFor($book) : null);
+            $anchor = $this->references->anchorsWithSheet($main) ? $this->anchorFor($book) : null;
+            $castPortraits = $this->castPortraits($book, $cast, $main, $anchor);
+            $this->storePageIllustration($page, $book, $cast, $main, $anchor, $castPortraits);
         } catch (ImageFlaggedSensitiveException $exception) {
             // Park it for review. A page that already has a good image keeps
             // it (and its Complete status): a failed regeneration must never
@@ -615,6 +623,69 @@ class StoryGenerator
     }
 
     /**
+     * A reference image per cast member id, to be used instead of the raw
+     * photo: the hero's sheet for the main character, and a stylized portrait
+     * (drawn once per character + style, cached) for every photographed
+     * supporting character. Characters without a usable photo, or in photo
+     * mode, are omitted and fall back to their photo/description downstream.
+     *
+     * @param  Collection<int, Character>  $cast
+     * @return array<int, ImageReference>
+     */
+    private function castPortraits(Book $book, Collection $cast, Character $main, ?ImageReference $anchor): array
+    {
+        $style = $this->effectiveStyle($book);
+        $map = [];
+
+        if ($anchor !== null) {
+            $map[$main->id] = $anchor;
+        }
+
+        foreach ($cast as $member) {
+            if ($member->id === $main->id) {
+                continue;
+            }
+
+            if ($this->references->anchorsWithSheet($member) && $this->references->hasUsablePhoto($member)) {
+                $map[$member->id] = $this->supportingPortrait($book, $member, $style);
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * A photographed supporting character's stylized portrait for this style,
+     * reused from the character's library when already drawn, else generated
+     * once and cached. Unlike the hero sheet it never touches the book (no
+     * hero_sheet_path, no book version): it belongs to the character.
+     */
+    private function supportingPortrait(Book $book, Character $member, string $style): ImageReference
+    {
+        $cached = CharacterPortrait::query()
+            ->where('character_id', $member->id)
+            ->where('art_style', $style)
+            ->first();
+
+        if ($cached !== null && MediaDisk::public()->exists($cached->path)) {
+            return new ImageReference($cached->path, "{$member->name} (character sheet)");
+        }
+
+        [$image, $engine] = $this->generateHeroSheetImage($book, $member);
+        $path = sprintf('portraits/%d/%s-%s.png', $member->id, $style, Str::lower(Str::random(8)));
+        $this->images->storeGenerated($image->bytes, $path);
+
+        CharacterPortrait::query()->updateOrCreate(
+            ['character_id' => $member->id, 'art_style' => $style],
+            ['path' => $path, 'prompt' => $image->prompt, ...$engine],
+        );
+
+        Log::info('Supporting character portrait stored.', ['character_id' => $member->id, 'art_style' => $style, 'path' => $path]);
+
+        return new ImageReference($path, "{$member->name} (character sheet)");
+    }
+
+    /**
      * The style this run actually draws in: the per-run admin override when
      * one is active, else the book's stored style.
      */
@@ -664,11 +735,15 @@ class StoryGenerator
     /**
      * @param  Collection<int, Character>  $cast
      */
-    private function generatePageImage(Page $page, Book $book, Collection $cast, Character $main, ?ImageReference $anchor = null): GeneratedImage
+    /**
+     * @param  Collection<int, Character>  $cast
+     * @param  array<int, ImageReference>  $castPortraits
+     */
+    private function generatePageImage(Page $page, Book $book, Collection $cast, Character $main, ?ImageReference $anchor = null, array $castPortraits = []): GeneratedImage
     {
         // Composed per engine: a fallback engine gets a prompt built for its
         // own reference budget, never a stale one with dangling pointers.
-        $compose = fn (): array => $this->imagePrompts->page($book, $page, $cast, $main, $anchor);
+        $compose = fn (): array => $this->imagePrompts->page($book, $page, $cast, $main, $anchor, $castPortraits);
 
         return $this->safeImages->generate('', $this->sizes->bookSize(), [], "page {$page->page_number}", new PromptLogContext($book->id, 'page', $page->id), $compose);
     }
@@ -787,10 +862,11 @@ class StoryGenerator
      * ratio), replacing any previous file, and mark the page complete.
      *
      * @param  Collection<int, Character>  $cast
+     * @param  array<int, ImageReference>  $castPortraits
      */
-    private function storePageIllustration(Page $page, Book $book, Collection $cast, Character $main, ?ImageReference $anchor = null): void
+    private function storePageIllustration(Page $page, Book $book, Collection $cast, Character $main, ?ImageReference $anchor = null, array $castPortraits = []): void
     {
-        $image = $this->generatePageImage($page, $book, $cast, $main, $anchor);
+        $image = $this->generatePageImage($page, $book, $cast, $main, $anchor, $castPortraits);
         $path = sprintf('books/%d/pages/%d-%s.png', $book->id, $page->page_number, Str::lower(Str::random(8)));
 
         $this->images->storeGenerated($image->bytes, $path);
@@ -821,10 +897,11 @@ class StoryGenerator
      *
      * @param  list<Page>  $pages
      * @param  Collection<int, Character>  $cast
+     * @param  array<int, ImageReference>  $castPortraits
      */
-    private function storePagesAsGroup(Book $book, array $pages, Collection $cast, Character $main, ?ImageReference $anchor): void
+    private function storePagesAsGroup(Book $book, array $pages, Collection $cast, Character $main, ?ImageReference $anchor, array $castPortraits = []): void
     {
-        $batches = $this->planGroupBatches($book, $pages, $cast, $main, $anchor);
+        $batches = $this->planGroupBatches($book, $pages, $cast, $main, $anchor, $castPortraits);
 
         if ($batches === []) {
             Log::info('No grouped batch layout fits the engine limits; using page-by-page generation.', ['pages' => count($pages)]);
@@ -844,7 +921,7 @@ class StoryGenerator
         foreach ($batches as $batchPages) {
             $this->abortIfStopRequested($book);
 
-            ['prompt' => $prompt, 'references' => $references] = $this->imagePrompts->pageGroup($book, $batchPages, $cast, $main, $anchor, $styleAnchor);
+            ['prompt' => $prompt, 'references' => $references] = $this->imagePrompts->pageGroup($book, $batchPages, $cast, $main, $anchor, $styleAnchor, $castPortraits);
 
             $images = $this->ai->generateImageGroup($prompt, $this->sizes->bookSize(), $references, count($batchPages));
 
@@ -874,9 +951,10 @@ class StoryGenerator
      *
      * @param  list<Page>  $pages
      * @param  Collection<int, Character>  $cast
+     * @param  array<int, ImageReference>  $castPortraits
      * @return list<list<Page>>
      */
-    private function planGroupBatches(Book $book, array $pages, Collection $cast, Character $main, ?ImageReference $anchor): array
+    private function planGroupBatches(Book $book, array $pages, Collection $cast, Character $main, ?ImageReference $anchor, array $castPortraits = []): array
     {
         $total = count($pages);
         $maxBatches = max(1, min(4, intdiv($total, 2)));
@@ -886,7 +964,7 @@ class StoryGenerator
             $allFit = true;
 
             foreach ($batches as $index => $batchPages) {
-                if (! $this->groupBatchFits($book, $batchPages, $cast, $main, $anchor, needsStyleAnchor: $index > 0)) {
+                if (! $this->groupBatchFits($book, $batchPages, $cast, $main, $anchor, needsStyleAnchor: $index > 0, castPortraits: $castPortraits)) {
                     $allFit = false;
 
                     break;
@@ -907,10 +985,11 @@ class StoryGenerator
      *
      * @param  list<Page>  $batchPages
      * @param  Collection<int, Character>  $cast
+     * @param  array<int, ImageReference>  $castPortraits
      */
-    private function groupBatchFits(Book $book, array $batchPages, Collection $cast, Character $main, ?ImageReference $anchor, bool $needsStyleAnchor): bool
+    private function groupBatchFits(Book $book, array $batchPages, Collection $cast, Character $main, ?ImageReference $anchor, bool $needsStyleAnchor, array $castPortraits = []): bool
     {
-        ['prompt' => $prompt, 'references' => $references] = $this->imagePrompts->pageGroup($book, $batchPages, $cast, $main, $anchor);
+        ['prompt' => $prompt, 'references' => $references] = $this->imagePrompts->pageGroup($book, $batchPages, $cast, $main, $anchor, null, $castPortraits);
 
         $referenceCount = count($references) + ($needsStyleAnchor ? 1 : 0);
         $charBudget = 3800 - ($needsStyleAnchor ? 150 : 0);

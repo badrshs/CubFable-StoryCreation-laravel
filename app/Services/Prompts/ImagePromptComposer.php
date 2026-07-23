@@ -166,9 +166,10 @@ PROMPT;
      * pages keep the original single-sentence format.
      *
      * @param  Collection<int, Character>  $cast
+     * @param  array<int, ImageReference>  $castPortraits  Stylized portrait per character id, used as the reference instead of the raw photo.
      * @return array{prompt: string, references: list<ImageReference>}
      */
-    public function page(Book $book, Page $page, Collection $cast, Character $main, ?ImageReference $anchor = null): array
+    public function page(Book $book, Page $page, Collection $cast, Character $main, ?ImageReference $anchor = null, array $castPortraits = []): array
     {
         $artStyle = $this->styles->descriptor($this->styleKey($book));
         $pageNumberLabel = "page {$page->page_number}";
@@ -201,12 +202,19 @@ PROMPT;
         foreach ($present as $member) {
             $anchorCoversMember = $member->id === $main->id && $references !== [] && $anchor !== null;
 
+            // Prefer the character's stylized portrait as the reference; fall
+            // back to the raw photo only when no portrait exists (photo mode).
+            $memberRef = $castPortraits[$member->id]
+                ?? ($this->policy->hasUsablePhoto($member)
+                    ? new ImageReference((string) $member->photo_path, $member->name)
+                    : null);
+
             $withinBudget = ! $anchorCoversMember
-                && $this->policy->hasUsablePhoto($member)
+                && $memberRef !== null
                 && ($budget === null || count($references) < $budget);
 
             if ($withinBudget) {
-                $references[] = new ImageReference((string) $member->photo_path, $member->name);
+                $references[] = $memberRef;
             }
 
             $memberExpression = $member->id === $main->id ? $expression : null;
@@ -281,9 +289,10 @@ PROMPT;
      *
      * @param  list<Page>  $pages
      * @param  Collection<int, Character>  $cast
+     * @param  array<int, ImageReference>  $castPortraits  Stylized portrait per character id, used as the reference instead of the raw photo.
      * @return array{prompt: string, references: list<ImageReference>}
      */
-    public function pageGroup(Book $book, array $pages, Collection $cast, Character $main, ?ImageReference $anchor = null, ?ImageReference $styleAnchor = null): array
+    public function pageGroup(Book $book, array $pages, Collection $cast, Character $main, ?ImageReference $anchor = null, ?ImageReference $styleAnchor = null, array $castPortraits = []): array
     {
         $artStyle = $this->styles->descriptor($this->styleKey($book));
         $bible = $book->story_bible ?? [];
@@ -308,12 +317,19 @@ PROMPT;
         foreach ($present as $member) {
             $anchorCoversMember = $member->id === $main->id && $references !== [] && $anchor !== null;
 
+            // Prefer the character's stylized portrait; the raw photo is the
+            // fallback only when no portrait exists (photo mode).
+            $memberRef = $castPortraits[$member->id]
+                ?? ($this->policy->hasUsablePhoto($member)
+                    ? new ImageReference((string) $member->photo_path, $member->name)
+                    : null);
+
             $withinBudget = ! $anchorCoversMember
-                && $this->policy->hasUsablePhoto($member)
+                && $memberRef !== null
                 && ($budget === null || count($references) < $budget);
 
             if ($withinBudget) {
-                $references[] = new ImageReference((string) $member->photo_path, $member->name);
+                $references[] = $memberRef;
                 $lines[] = '- '.$this->identity->referenceLine($member->name, count($references), null, $member->age_group);
             } elseif ($anchorCoversMember) {
                 $lines[] = '- '.$this->identity->referenceLine($member->name, 1, null, $member->age_group);

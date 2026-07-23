@@ -9,9 +9,12 @@ use App\Models\Book;
 use App\Models\Character;
 use App\Models\CharacterPortrait;
 use App\Models\ImageVersion;
+use App\Models\Page;
 use App\Models\Template;
 use App\Models\User;
+use App\Services\AI\ImageReference;
 use App\Services\BookStopSignal;
+use App\Services\Prompts\ImagePromptComposer;
 use App\Services\StoryGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -128,6 +131,107 @@ class CharacterPortraitTest extends TestCase
         $this->assertSame($portrait->path, $second->hero_sheet_path);
         $this->assertSame(1, CharacterPortrait::query()->count());
         $this->assertSame(5, $this->imageCallCount());
+    }
+
+    public function test_supporting_characters_with_a_photo_also_get_a_cached_portrait(): void
+    {
+        $user = User::factory()->create();
+        $template = Template::factory()->create(['page_count' => 1]);
+        $main = $this->makeCharacter($user);
+
+        // A supporting character WITH a photo, named in the page scene so it
+        // is present on the page.
+        $sidekick = Character::factory()->for($user)->create([
+            'name' => 'Mia',
+            'appearance' => 'A small round robot.',
+        ]);
+        // Distinct name so presence matching is unambiguous.
+        $sidekick->update(['name' => 'Robo']);
+        Storage::disk('public')->put("characters/{$sidekick->id}/photo.jpg", (string) base64_decode(self::PNG_BASE64, true));
+        $sidekick->update(['photo_path' => "characters/{$sidekick->id}/photo.jpg"]);
+
+        $book = Book::factory()->pending()->for($user)->for($template)->create([
+            'child_name' => 'Mia',
+            'theme' => 'space',
+            'subject' => 'a robot friend',
+            'language' => 'en',
+            'art_style' => 'watercolor',
+        ]);
+        $book->characters()->attach($main->id, ['is_main' => true, 'sort_order' => 0]);
+        $book->characters()->attach($sidekick->id, ['is_main' => false, 'sort_order' => 1]);
+
+        // Scene text names Robo so it is present on the page.
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), 'chat/completions')) {
+                $blueprint = [
+                    'world' => 'Deep space.',
+                    'colorScript' => ['starlight'],
+                    'pages' => [
+                        ['text' => 'Mia and Robo float together.', 'scene' => ['shot' => 'wide', 'action' => 'Mia and Robo float', 'expression' => 'joyful', 'detail' => 'stars']],
+                    ],
+                ];
+
+                return Http::response([
+                    'choices' => [['message' => ['content' => json_encode($blueprint)]]],
+                    'usage' => ['prompt_tokens' => 100, 'completion_tokens' => 200, 'total_tokens' => 300],
+                ]);
+            }
+
+            return Http::response(['data' => [['b64_json' => self::PNG_BASE64]]]);
+        });
+
+        (new GenerateStorybookJob($book->id))->handle(app(StoryGenerator::class));
+
+        $this->assertSame(BookStatus::Complete, $book->refresh()->status);
+
+        // Both the hero and the photographed sidekick have a cached portrait.
+        $this->assertSame(1, CharacterPortrait::query()->where('character_id', $main->id)->where('art_style', 'watercolor')->count());
+        $this->assertSame(1, CharacterPortrait::query()->where('character_id', $sidekick->id)->where('art_style', 'watercolor')->count());
+    }
+
+    public function test_the_page_prompt_references_the_supporting_portrait_not_the_photo(): void
+    {
+        $user = User::factory()->create();
+        $template = Template::factory()->create(['page_count' => 1]);
+        $main = $this->makeCharacter($user);
+
+        $sidekick = Character::factory()->for($user)->create([
+            'name' => 'Robo',
+            'appearance' => 'A small round robot.',
+        ]);
+        Storage::disk('public')->put("characters/{$sidekick->id}/photo.jpg", (string) base64_decode(self::PNG_BASE64, true));
+        $sidekick->update(['photo_path' => "characters/{$sidekick->id}/photo.jpg"]);
+
+        $portraitPath = "portraits/{$sidekick->id}/watercolor-abc.png";
+        Storage::disk('public')->put($portraitPath, (string) base64_decode(self::PNG_BASE64, true));
+
+        $book = Book::factory()->pending()->for($user)->for($template)->create([
+            'child_name' => 'Mia',
+            'theme' => 'space',
+            'art_style' => 'watercolor',
+        ]);
+        $book->characters()->attach($main->id, ['is_main' => true, 'sort_order' => 0]);
+        $book->characters()->attach($sidekick->id, ['is_main' => false, 'sort_order' => 1]);
+
+        $page = Page::factory()->for($book)->create([
+            'page_number' => 1,
+            'text' => 'Mia and Robo float together.',
+            'scene' => 'Mia and Robo float among the stars.',
+        ]);
+
+        $cast = $book->characters()->get();
+        $castPortraits = [
+            $sidekick->id => new ImageReference($portraitPath, 'Robo'),
+        ];
+
+        ['references' => $references] = app(ImagePromptComposer::class)
+            ->page($book, $page, $cast, $main, null, $castPortraits);
+
+        $paths = array_map(fn (ImageReference $r): string => $r->path, $references);
+
+        // The sidekick's portrait is referenced; its raw photo is not.
+        $this->assertContains($portraitPath, $paths);
+        $this->assertNotContains("characters/{$sidekick->id}/photo.jpg", $paths);
     }
 
     public function test_a_different_style_gets_its_own_portrait(): void
