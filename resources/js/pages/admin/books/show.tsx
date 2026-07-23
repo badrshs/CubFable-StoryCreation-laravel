@@ -54,14 +54,25 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 
+type JournalReference = {
+    path: string;
+    label: string | null;
+    isRawPhoto: boolean;
+};
+
 type JournalEntry = {
     id: number;
     purpose: string;
     pageNumber: number | null;
     attempt: number;
+    round: number;
     variant: string;
+    provider: string | null;
+    model: string | null;
     accepted: boolean;
+    error: string | null;
     prompt: string;
+    references: JournalReference[];
     createdAt: string;
 };
 
@@ -91,7 +102,13 @@ type Props = {
             id: number;
             name: string;
             isMain: boolean;
+            role: string | null;
+            ageGroup: string | null;
+            description: string | null;
+            appearance: string | null;
+            photoUrl: string | null;
             portraitUrl: string | null;
+            portraits: { artStyle: string; url: string }[];
         }[];
     };
     journal: JournalEntry[];
@@ -315,6 +332,31 @@ export default function AdminBookShow({
         items: GalleryItem[];
         index: number;
     } | null>(null);
+
+    // "What went into this image" inspector: the exact DB records (prompt,
+    // engine, and the reference images actually sent) for a clicked slot.
+    const [imageDetails, setImageDetails] = useState<{
+        title: string;
+        url: string | null;
+        entries: JournalEntry[];
+    } | null>(null);
+    const [characterDetails, setCharacterDetails] = useState<
+        Props['book']['cast'][number] | null
+    >(null);
+
+    const openImageDetails = (
+        title: string,
+        url: string | null,
+        purpose: string,
+        pageNumber: number | null = null,
+    ) => {
+        const entries = journal.filter(
+            (entry) =>
+                entry.purpose === purpose &&
+                (pageNumber === null || entry.pageNumber === pageNumber),
+        );
+        setImageDetails({ title, url, entries });
+    };
 
     // The single regenerate popup: which image is being regenerated, plus the
     // one-off art style and Replicate model chosen for it. Both default to
@@ -707,12 +749,15 @@ export default function AdminBookShow({
                                     <div className="w-28">
                                         <button
                                             type="button"
+                                            title="See how this image was made"
                                             onClick={() =>
-                                                openImage(
-                                                    String(book.coverImageUrl),
+                                                openImageDetails(
+                                                    'Cover',
+                                                    book.coverImageUrl,
+                                                    'cover',
                                                 )
                                             }
-                                            className="block aspect-[3/2] w-full cursor-zoom-in overflow-hidden rounded-md border border-gold/50 bg-muted focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+                                            className="block aspect-[3/2] w-full cursor-pointer overflow-hidden rounded-md border border-gold/50 bg-muted focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                                         >
                                             <img
                                                 src={book.coverImageUrl}
@@ -753,14 +798,16 @@ export default function AdminBookShow({
                                             {page.imageUrl && (
                                                 <button
                                                     type="button"
+                                                    title="See how this image was made"
                                                     onClick={() =>
-                                                        openImage(
-                                                            String(
-                                                                page.imageUrl,
-                                                            ),
+                                                        openImageDetails(
+                                                            `Page ${page.pageNumber}`,
+                                                            page.imageUrl,
+                                                            'page',
+                                                            page.pageNumber,
                                                         )
                                                     }
-                                                    className="block h-full w-full cursor-zoom-in focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+                                                    className="block h-full w-full cursor-pointer focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
                                                 >
                                                     <img
                                                         src={page.imageUrl}
@@ -818,31 +865,26 @@ export default function AdminBookShow({
                         <div className="flex flex-wrap gap-4">
                             {book.cast.map((member) => (
                                 <div key={member.id} className="w-40">
-                                    <div className="aspect-[3/4] overflow-hidden rounded-md border border-card-border bg-muted">
+                                    <button
+                                        type="button"
+                                        title="See this character's details"
+                                        onClick={() =>
+                                            setCharacterDetails(member)
+                                        }
+                                        className="block aspect-[3/4] w-full cursor-pointer overflow-hidden rounded-md border border-card-border bg-muted focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+                                    >
                                         {member.portraitUrl ? (
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    openImage(
-                                                        String(
-                                                            member.portraitUrl,
-                                                        ),
-                                                    )
-                                                }
-                                                className="block h-full w-full cursor-zoom-in focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
-                                            >
-                                                <img
-                                                    src={member.portraitUrl}
-                                                    alt={`${member.name} portrait`}
-                                                    className="h-full w-full object-cover transition-transform hover:scale-105"
-                                                />
-                                            </button>
+                                            <img
+                                                src={member.portraitUrl}
+                                                alt={`${member.name} portrait`}
+                                                className="h-full w-full object-cover transition-transform hover:scale-105"
+                                            />
                                         ) : (
                                             <div className="flex h-full w-full items-center justify-center p-2 text-center text-xs text-muted-foreground">
                                                 No portrait yet
                                             </div>
                                         )}
-                                    </div>
+                                    </button>
                                     <p className="mt-1 truncate text-center text-xs font-medium text-foreground">
                                         {member.name}
                                         {member.isMain && ' (hero)'}
@@ -970,6 +1012,219 @@ export default function AdminBookShow({
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Inspector: exactly what the database holds for a clicked image
+                - the prompt, engine, and the reference images actually sent
+                (a raw photo is flagged, so a photographic face is explained). */}
+            <Dialog
+                open={imageDetails !== null}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setImageDetails(null);
+                    }
+                }}
+            >
+                <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>{imageDetails?.title} details</DialogTitle>
+                        <DialogDescription>
+                            Every generation attempt for this image, newest
+                            last, exactly as stored.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {imageDetails?.url && (
+                        <button
+                            type="button"
+                            onClick={() => openImage(String(imageDetails.url))}
+                            className="mb-3 block cursor-zoom-in self-start focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+                        >
+                            <img
+                                src={imageDetails.url}
+                                alt={imageDetails.title}
+                                className="max-h-64 w-auto rounded-md border border-card-border"
+                            />
+                        </button>
+                    )}
+
+                    {imageDetails && imageDetails.entries.length === 0 && (
+                        <p className="text-sm text-muted-foreground">
+                            No generation records were journaled for this image.
+                        </p>
+                    )}
+
+                    <div className="space-y-3">
+                        {imageDetails?.entries.map((entry) => (
+                            <div
+                                key={entry.id}
+                                className="rounded-lg border border-card-border p-3 text-xs"
+                            >
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                    <span className="font-semibold">
+                                        attempt {entry.attempt} (round{' '}
+                                        {entry.round}, {entry.variant})
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                        {entry.provider} / {entry.model}
+                                    </span>
+                                    <span
+                                        className={
+                                            entry.accepted
+                                                ? 'text-green-600'
+                                                : 'text-destructive'
+                                        }
+                                    >
+                                        {entry.accepted
+                                            ? 'accepted'
+                                            : 'not accepted'}
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                        {entry.createdAt}
+                                    </span>
+                                </div>
+
+                                <div className="mt-2">
+                                    <span className="font-semibold">
+                                        References sent:
+                                    </span>{' '}
+                                    {entry.references.length === 0 ? (
+                                        <span className="text-muted-foreground">
+                                            none (no reference image)
+                                        </span>
+                                    ) : (
+                                        <ul className="mt-1 space-y-0.5">
+                                            {entry.references.map((ref) => (
+                                                <li
+                                                    key={ref.path}
+                                                    className={
+                                                        ref.isRawPhoto
+                                                            ? 'font-medium text-destructive'
+                                                            : 'text-foreground'
+                                                    }
+                                                >
+                                                    {ref.label
+                                                        ? `${ref.label}: `
+                                                        : ''}
+                                                    {ref.path}
+                                                    {ref.isRawPhoto
+                                                        ? ' - RAW PHOTO'
+                                                        : ''}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </div>
+
+                                {entry.error && (
+                                    <p className="mt-2 text-destructive">
+                                        error: {entry.error}
+                                    </p>
+                                )}
+
+                                <details className="mt-2">
+                                    <summary className="cursor-pointer text-muted-foreground">
+                                        prompt
+                                    </summary>
+                                    <pre className="mt-1 max-h-52 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2">
+                                        {entry.prompt}
+                                    </pre>
+                                </details>
+                            </div>
+                        ))}
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Character inspector: the exact stored fields plus every saved
+                portrait, so the reference behind an image is transparent. */}
+            <Dialog
+                open={characterDetails !== null}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setCharacterDetails(null);
+                    }
+                }}
+            >
+                <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+                    <DialogHeader>
+                        <DialogTitle>
+                            {characterDetails?.name}
+                            {characterDetails?.isMain ? ' (hero)' : ''}
+                        </DialogTitle>
+                        <DialogDescription>
+                            What this character is and every stylized portrait
+                            saved for it.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {characterDetails && (
+                        <div className="space-y-3 text-sm">
+                            <div className="grid grid-cols-2 gap-2">
+                                <p>
+                                    <span className="text-muted-foreground">
+                                        Role:
+                                    </span>{' '}
+                                    {characterDetails.role ?? '-'}
+                                </p>
+                                <p>
+                                    <span className="text-muted-foreground">
+                                        Age group:
+                                    </span>{' '}
+                                    {characterDetails.ageGroup ?? '-'}
+                                </p>
+                            </div>
+                            {characterDetails.description && (
+                                <p>
+                                    <span className="text-muted-foreground">
+                                        Description:
+                                    </span>{' '}
+                                    {characterDetails.description}
+                                </p>
+                            )}
+                            {characterDetails.appearance && (
+                                <div>
+                                    <span className="text-muted-foreground">
+                                        Cached appearance:
+                                    </span>
+                                    <p className="mt-1 rounded bg-muted/40 p-2 text-xs">
+                                        {characterDetails.appearance}
+                                    </p>
+                                </div>
+                            )}
+
+                            <div className="flex flex-wrap gap-3">
+                                {characterDetails.photoUrl && (
+                                    <div className="w-28">
+                                        <img
+                                            src={characterDetails.photoUrl}
+                                            alt="Uploaded photo"
+                                            className="aspect-[3/4] w-full rounded-md border border-destructive/50 object-cover"
+                                        />
+                                        <p className="mt-1 text-center text-xs text-destructive">
+                                            raw photo
+                                        </p>
+                                    </div>
+                                )}
+                                {characterDetails.portraits.map((portrait) => (
+                                    <div
+                                        key={portrait.artStyle}
+                                        className="w-28"
+                                    >
+                                        <img
+                                            src={portrait.url}
+                                            alt={`${portrait.artStyle} portrait`}
+                                            className="aspect-[3/4] w-full rounded-md border border-card-border object-cover"
+                                        />
+                                        <p className="mt-1 text-center text-xs text-muted-foreground">
+                                            {portrait.artStyle}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
 
             {/* Per-image regenerate: pick a one-off art style and Replicate
                 model for just this cover/page. */}

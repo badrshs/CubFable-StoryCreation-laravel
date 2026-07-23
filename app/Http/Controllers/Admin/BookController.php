@@ -99,7 +99,17 @@ class BookController extends Controller
             'id' => $character->id,
             'name' => $character->name,
             'isMain' => (bool) ($character->pivot?->is_main ?? false),
+            'role' => $character->role,
+            'ageGroup' => $character->age_group,
+            'description' => $character->description,
+            'appearance' => $character->appearance,
+            'photoUrl' => $character->photo_url,
             'portraitUrl' => $character->portraits->firstWhere('art_style', $book->art_style)?->url,
+            'portraits' => $character->portraits
+                ->map(fn ($portrait): array => ['artStyle' => $portrait->art_style, 'url' => $portrait->url])
+                ->filter(fn (array $portrait): bool => $portrait['url'] !== null)
+                ->values()
+                ->all(),
         ])->values()->all();
 
         $journal = ImagePrompt::query()
@@ -111,9 +121,23 @@ class BookController extends Controller
                 'purpose' => $prompt->purpose,
                 'pageNumber' => $prompt->page_id !== null ? $pageNumbers[$prompt->page_id] ?? null : null,
                 'attempt' => $prompt->attempt,
+                'round' => $prompt->round,
                 'variant' => $prompt->variant,
+                'provider' => $prompt->provider,
+                'model' => $prompt->model,
                 'accepted' => $prompt->accepted,
+                'error' => $prompt->error,
                 'prompt' => $prompt->prompt,
+                // The exact reference images sent with this attempt, so it is
+                // visible whether a character travelled as a stylized portrait
+                // (portraits/...) or as their raw uploaded photo (characters/...).
+                'references' => collect($prompt->references ?? [])
+                    ->map(fn (array $reference): array => [
+                        'path' => $reference['path'] ?? '',
+                        'label' => $reference['label'] ?? null,
+                        'isRawPhoto' => str_starts_with((string) ($reference['path'] ?? ''), 'characters/'),
+                    ])
+                    ->all(),
                 'createdAt' => $prompt->created_at?->toDateTimeString() ?? '',
             ]);
 

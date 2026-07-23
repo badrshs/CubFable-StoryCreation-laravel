@@ -89,7 +89,7 @@ class SafeImageGenerator
                         $this->abortIfBookStopped($log);
 
                         $attempt++;
-                        $journal = $this->journalAttempt($log, $attempt, $round, $variant, $effectivePrompt);
+                        $journal = $this->journalAttempt($log, $attempt, $round, $variant, $effectivePrompt, $refs);
 
                         try {
                             $image = new GeneratedImage(
@@ -220,7 +220,10 @@ class SafeImageGenerator
      * Journal one attempt to image_prompts. Never lets a bookkeeping failure
      * break generation.
      */
-    private function journalAttempt(?PromptLogContext $log, int $attempt, int $round, string $variant, string $prompt): ?ImagePrompt
+    /**
+     * @param  list<ImageReference>  $references
+     */
+    private function journalAttempt(?PromptLogContext $log, int $attempt, int $round, string $variant, string $prompt, array $references = []): ?ImagePrompt
     {
         if ($log === null) {
             return null;
@@ -239,6 +242,10 @@ class SafeImageGenerator
                 'provider' => $provider,
                 'model' => (string) config("cubfable.ai.models.image.{$provider}"),
                 'prompt' => $prompt,
+                'references' => array_map(
+                    fn (ImageReference $reference): array => ['path' => $reference->path, 'label' => $reference->label],
+                    $references,
+                ),
                 'accepted' => false,
             ]);
         } catch (Throwable $exception) {

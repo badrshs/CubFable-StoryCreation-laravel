@@ -9,6 +9,7 @@ use App\Jobs\RegeneratePageJob;
 use App\Models\Book;
 use App\Models\Character;
 use App\Models\CharacterPortrait;
+use App\Models\ImagePrompt;
 use App\Models\ImageVersion;
 use App\Models\Page;
 use App\Models\Template;
@@ -486,6 +487,32 @@ class CharacterPortraitTest extends TestCase
             ->from("/admin/books/{$book->id}")
             ->post("/admin/books/{$book->id}/portrait/regenerate", ['characterId' => $stranger->id])
             ->assertSessionHasErrors('characterId');
+    }
+
+    public function test_the_reference_images_used_are_recorded_on_each_attempt(): void
+    {
+        $user = User::factory()->create();
+        $template = Template::factory()->create(['page_count' => 1]);
+        $character = $this->makeCharacter($user);
+        $this->fakeOpenAi();
+
+        $book = $this->pendingBook($user, $template, $character, 'watercolor');
+        (new GenerateStorybookJob($book->id))->handle(app(StoryGenerator::class));
+
+        // The page attempt recorded the portrait it was anchored to, so the
+        // reference behind any image is auditable from the database.
+        $portrait = CharacterPortrait::query()->where('character_id', $character->id)->sole();
+        $pagePrompt = ImagePrompt::query()
+            ->where('book_id', $book->id)
+            ->where('purpose', 'page')
+            ->where('accepted', true)
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($pagePrompt);
+        $paths = array_column($pagePrompt->references ?? [], 'path');
+        $this->assertContains($portrait->path, $paths);
+        $this->assertNotContains("characters/{$character->id}/photo.jpg", $paths);
     }
 
     public function test_the_library_lists_portraits(): void

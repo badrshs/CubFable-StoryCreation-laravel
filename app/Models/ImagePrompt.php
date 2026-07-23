@@ -23,6 +23,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $provider
  * @property string|null $model
  * @property string $prompt
+ * @property array<int, array{path: string, label: string|null}>|null $references
  * @property bool $accepted
  * @property string|null $error
  * @property Carbon|null $created_at
@@ -38,6 +39,7 @@ use Illuminate\Support\Carbon;
     'provider',
     'model',
     'prompt',
+    'references',
     'accepted',
     'error',
 ])]
@@ -52,6 +54,7 @@ class ImagePrompt extends Model
     {
         return [
             'accepted' => 'boolean',
+            'references' => 'array',
         ];
     }
 
