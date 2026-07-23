@@ -368,6 +368,24 @@ export default function AdminSettings({
         );
     };
 
+    // The portrait engine only matters in sheet mode; flipping the identity
+    // anchor from here closes the trap of configuring an engine that never
+    // runs.
+    const [savingIdentity, setSavingIdentity] = useState(false);
+
+    const switchToSheetMode = () => {
+        form.setData('identity_reference', 'sheet');
+        router.put(
+            '/admin/settings',
+            { ...form.data, identity_reference: 'sheet' },
+            {
+                preserveScroll: true,
+                onStart: () => setSavingIdentity(true),
+                onFinish: () => setSavingIdentity(false),
+            },
+        );
+    };
+
     const applyPreset = (preset: EnginePreset) => {
         if (preset.values.image_model_replicate !== undefined) {
             setReplicateCustomModel(false);
@@ -570,6 +588,30 @@ export default function AdminSettings({
                             while pages run on a consistency engine. Drawn
                             once per character and style, then reused. */}
                         <div className="mt-4 rounded-xl border border-card-border bg-muted/20 p-4">
+                            {String(form.data.identity_reference ?? '') ===
+                                'photo' && (
+                                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 dark:border-amber-900/50 dark:bg-amber-950/40">
+                                    <p className="text-xs text-amber-900 dark:text-amber-200">
+                                        Portraits are OFF: the identity anchor
+                                        is set to &quot;photo&quot;, so the raw
+                                        photo travels with every image and no
+                                        portrait is ever drawn. The engine
+                                        below does nothing until sheet mode is
+                                        on.
+                                    </p>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={switchToSheetMode}
+                                        disabled={savingIdentity}
+                                    >
+                                        {savingIdentity && (
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        )}
+                                        Switch to sheet mode
+                                    </Button>
+                                </div>
+                            )}
                             <Field
                                 label="Portrait engine"
                                 hint="The character sheet only: drawn once per character and art style, then reused by every book. 'Same as main engine' follows the cards above."
