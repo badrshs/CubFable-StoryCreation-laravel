@@ -227,8 +227,8 @@ class StoryGenerator
                 throw new RuntimeException('Book has no characters');
             }
 
-            $anchor = $this->references->anchorsWithSheet($main) ? $this->anchorFor($book) : null;
-            $castPortraits = $this->castPortraits($book, $cast, $main, $anchor);
+            $anchor = $this->manualRegenAnchor($book, $main);
+            $castPortraits = $this->cachedCastPortraits($book, $cast, $main, $anchor);
             $this->storePageIllustration($page, $book, $cast, $main, $anchor, $castPortraits);
         } catch (ImageFlaggedSensitiveException $exception) {
             // Park it for review. A page that already has a good image keeps
@@ -269,7 +269,7 @@ class StoryGenerator
                 throw new RuntimeException('Book has no characters');
             }
 
-            $this->storeCover($book, $main, $this->references->anchorsWithSheet($main) ? $this->anchorFor($book) : null);
+            $this->storeCover($book, $main, $this->manualRegenAnchor($book, $main));
             $book->update(['cover_status' => null]);
         } catch (ImageFlaggedSensitiveException $exception) {
             Log::error("Failed to regenerate cover for book {$book->id}: flagged as sensitive by every engine: {$exception->getMessage()}");
@@ -730,6 +730,73 @@ class StoryGenerator
         }
 
         return new ImageReference($path, "{$book->child_name} (character sheet)");
+    }
+
+    /**
+     * A character's saved portrait for a style as a reference, when one exists
+     * on disk. Read-only: never generates. This is what lets a manual
+     * regeneration pick up a portrait created after the book was first made.
+     */
+    private function cachedPortraitReference(Character $character, string $style): ?ImageReference
+    {
+        $portrait = CharacterPortrait::query()
+            ->where('character_id', $character->id)
+            ->where('art_style', $style)
+            ->first();
+
+        if ($portrait === null || ! MediaDisk::public()->exists($portrait->path)) {
+            return null;
+        }
+
+        return new ImageReference($portrait->path, "{$character->name} (character sheet)");
+    }
+
+    /**
+     * The reference per cast member for a manual regeneration: the same
+     * portrait-over-photo rule as a full run, but read-only - it reuses saved
+     * portraits and never generates a new one, so regenerating a single image
+     * never triggers surprise portrait generation.
+     *
+     * @param  Collection<int, Character>  $cast
+     * @return array<int, ImageReference>
+     */
+    private function cachedCastPortraits(Book $book, Collection $cast, Character $main, ?ImageReference $anchor): array
+    {
+        $style = $this->effectiveStyle($book);
+        $map = [];
+
+        if ($anchor !== null) {
+            $map[$main->id] = $anchor;
+        }
+
+        foreach ($cast as $member) {
+            if ($member->id === $main->id) {
+                continue;
+            }
+
+            $ref = $this->cachedPortraitReference($member, $style);
+
+            if ($ref !== null) {
+                $map[$member->id] = $ref;
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * The main character's reference for a manual regeneration in sheet mode:
+     * the book's own sheet when it has one, else the character's saved
+     * portrait for this style (so a portrait created after the book was made
+     * is used instead of falling back to the raw photo).
+     */
+    private function manualRegenAnchor(Book $book, Character $main): ?ImageReference
+    {
+        if (! $this->references->anchorsWithSheet($main)) {
+            return null;
+        }
+
+        return $this->anchorFor($book) ?? $this->cachedPortraitReference($main, $this->effectiveStyle($book));
     }
 
     /**

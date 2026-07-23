@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\BookStatus;
 use App\Jobs\GenerateStorybookJob;
 use App\Jobs\RegenerateCharacterPortraitJob;
+use App\Jobs\RegeneratePageJob;
 use App\Models\Book;
 use App\Models\Character;
 use App\Models\CharacterPortrait;
@@ -381,6 +382,67 @@ class CharacterPortraitTest extends TestCase
 
         $this->assertSame($sharedPath, $bookB->refresh()->hero_sheet_path);
         $this->assertSame(1, CharacterPortrait::query()->count());
+    }
+
+    public function test_manual_regeneration_uses_a_portrait_created_after_the_book_was_made(): void
+    {
+        // The reported case: a book first generated in photo mode (no sheet),
+        // so hero_sheet_path is null. A portrait now exists for the character.
+        // Regenerating a page must use that portrait, not the raw photo.
+        config()->set('cubfable.ai.identity_reference', 'sheet');
+
+        $user = User::factory()->create();
+        $template = Template::factory()->create(['page_count' => 1]);
+        $main = Character::factory()->for($user)->create([
+            'name' => 'Mia',
+            'appearance' => 'Short curly brown hair, yellow raincoat.',
+        ]);
+        Storage::disk('public')->put("characters/{$main->id}/photo.jpg", (string) base64_decode(self::PNG_BASE64, true));
+        $main->update(['photo_path' => "characters/{$main->id}/photo.jpg"]);
+
+        $portraitPath = "portraits/{$main->id}/watercolor-new.png";
+        Storage::disk('public')->put($portraitPath, (string) base64_decode(self::PNG_BASE64, true));
+        CharacterPortrait::query()->create([
+            'character_id' => $main->id,
+            'art_style' => 'watercolor',
+            'path' => $portraitPath,
+        ]);
+
+        $book = Book::factory()->complete()->for($user)->for($template)->create([
+            'child_name' => 'Mia',
+            'art_style' => 'watercolor',
+            'hero_sheet_path' => null,
+        ]);
+        $book->characters()->attach($main->id, ['is_main' => true, 'sort_order' => 0]);
+
+        $page = Page::factory()->for($book)->complete()->create([
+            'page_number' => 1,
+            'text' => 'Mia waves.',
+            'scene' => 'Mia waves in the meadow.',
+            'image_path' => "books/{$book->id}/pages/1-old.png",
+        ]);
+        Storage::disk('public')->put("books/{$book->id}/pages/1-old.png", (string) base64_decode(self::PNG_BASE64, true));
+
+        // Spy the composer: capture the reference it is handed, then abort
+        // before any real image call.
+        $captured = null;
+        $this->mock(ImagePromptComposer::class, function ($mock) use (&$captured): void {
+            $mock->shouldReceive('page')
+                ->andReturnUsing(function ($book, $page, $cast, $main, $anchor = null, $castPortraits = []) use (&$captured) {
+                    $captured = ['anchor' => $anchor, 'portraits' => $castPortraits];
+                    throw new \RuntimeException('stop-after-capture');
+                });
+        });
+
+        (new RegeneratePageJob($page->id))
+            ->handle(app(StoryGenerator::class), app(BookStopSignal::class));
+
+        $this->assertNotNull($captured, 'The composer was never called.');
+        $this->assertInstanceOf(ImageReference::class, $captured['anchor']);
+        $this->assertSame($portraitPath, $captured['anchor']->path);
+        $this->assertSame($portraitPath, $captured['portraits'][$main->id]->path ?? null);
+        // The raw photo is not used as the reference.
+        $this->assertNotSame("characters/{$main->id}/photo.jpg", $captured['anchor']->path);
     }
 
     public function test_the_library_lists_portraits(): void
