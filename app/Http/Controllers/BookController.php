@@ -334,14 +334,13 @@ class BookController extends Controller
                 $existing->photo_path = $images->storeDataUrl($member['photoUrl'], "characters/{$existing->id}");
                 $existing->appearance = null;
 
-                // A new photo invalidates every cached stylized portrait: the
-                // next generation redraws the character from the new face.
+                // A new photo forgets every cached stylized portrait so the
+                // NEXT generation rebuilds the reference from the new face.
+                // Only the rows are dropped; the files may still be the sheet
+                // of a book generated earlier, so they are never deleted here.
                 $existing->portraits()->delete();
 
-                DB::afterCommit(function () use ($images, $previousPhotoPath, $existing): void {
-                    $images->delete($previousPhotoPath);
-                    $images->deleteDirectory("portraits/{$existing->id}");
-                });
+                DB::afterCommit(fn () => $images->delete($previousPhotoPath));
             }
 
             $existing->save();

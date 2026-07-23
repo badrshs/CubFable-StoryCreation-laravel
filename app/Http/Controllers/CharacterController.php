@@ -116,11 +116,12 @@ class CharacterController extends Controller
             $images->delete($previousPhotoPath);
         }
 
-        // A new (or removed) photo invalidates every cached stylized
-        // portrait: the next generation redraws the character.
+        // A new (or removed) photo forgets every cached stylized portrait so
+        // the next generation rebuilds the reference. Only the rows are
+        // dropped; the files may still be the sheet of a book generated
+        // earlier, so they are never deleted here.
         if ($photoChanged) {
             $character->portraits()->delete();
-            $images->deleteDirectory("portraits/{$character->id}");
         }
 
         return back();
@@ -137,7 +138,8 @@ class CharacterController extends Controller
 
         if ($character !== null) {
             $images->delete($character->photo_path);
-            $images->deleteDirectory("portraits/{$character->id}");
+            // Portrait rows cascade on delete; their files are left in place
+            // since books generated earlier may still reference them.
             $character->delete();
         }
 

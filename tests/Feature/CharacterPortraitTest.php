@@ -190,7 +190,7 @@ class CharacterPortraitTest extends TestCase
         $this->assertSame(1, ImageVersion::query()->where('slot', 'sheet')->where('engine_provider', 'replicate')->count());
     }
 
-    public function test_replacing_the_photo_in_the_library_clears_cached_portraits(): void
+    public function test_replacing_the_photo_in_the_library_forgets_cached_portraits(): void
     {
         $user = User::factory()->create();
         $character = $this->makeCharacter($user);
@@ -208,8 +208,11 @@ class CharacterPortraitTest extends TestCase
             'photoUrl' => 'data:image/png;base64,'.self::PNG_BASE64,
         ])->assertRedirect();
 
+        // The cached reference is forgotten (next generation rebuilds it),
+        // but the file is left alone: a book generated earlier may still use
+        // it as its sheet.
         $this->assertSame(0, CharacterPortrait::query()->count());
-        Storage::disk('public')->assertMissing($path);
+        Storage::disk('public')->assertExists($path);
     }
 
     public function test_the_library_lists_portraits(): void
