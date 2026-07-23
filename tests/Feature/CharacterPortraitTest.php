@@ -489,6 +489,50 @@ class CharacterPortraitTest extends TestCase
             ->assertSessionHasErrors('characterId');
     }
 
+    public function test_manual_regeneration_generates_a_missing_portrait_instead_of_using_the_photo(): void
+    {
+        // Sheet mode, a photographed hero, but no portrait and no sheet yet.
+        // Regenerating a page must draw the portrait (not fall back to photo).
+        config()->set('cubfable.ai.identity_reference', 'sheet');
+
+        $user = User::factory()->create();
+        $template = Template::factory()->create(['page_count' => 1]);
+        $main = $this->makeCharacter($user);
+        Storage::disk('public')->put("characters/{$main->id}/photo.jpg", (string) base64_decode(self::PNG_BASE64, true));
+        $main->update(['photo_path' => "characters/{$main->id}/photo.jpg"]);
+
+        $book = Book::factory()->complete()->for($user)->for($template)->create([
+            'art_style' => 'watercolor',
+            'hero_sheet_path' => null,
+        ]);
+        $book->characters()->attach($main->id, ['is_main' => true, 'sort_order' => 0]);
+        $page = Page::factory()->for($book)->complete()->create([
+            'page_number' => 1,
+            'text' => 'Mia waves.',
+            'scene' => 'Mia waves.',
+            'image_path' => "books/{$book->id}/pages/1-old.png",
+        ]);
+        Storage::disk('public')->put("books/{$book->id}/pages/1-old.png", (string) base64_decode(self::PNG_BASE64, true));
+
+        $this->assertSame(0, CharacterPortrait::query()->where('character_id', $main->id)->count());
+
+        Http::fake(['api.openai.com/*' => Http::response(['data' => [['b64_json' => self::PNG_BASE64]]])]);
+
+        (new RegeneratePageJob($page->id))
+            ->handle(app(StoryGenerator::class), app(BookStopSignal::class));
+
+        // The portrait was generated on the fly and used; the book's own sheet
+        // pointer was NOT touched (the portrait belongs to the character).
+        $portrait = CharacterPortrait::query()->where('character_id', $main->id)->where('art_style', 'watercolor')->first();
+        $this->assertNotNull($portrait);
+        $this->assertNull($book->refresh()->hero_sheet_path);
+
+        $pagePrompt = ImagePrompt::query()->where('book_id', $book->id)->where('purpose', 'page')->where('accepted', true)->latest('id')->first();
+        $paths = array_column($pagePrompt?->references ?? [], 'path');
+        $this->assertContains($portrait->path, $paths);
+        $this->assertNotContains("characters/{$main->id}/photo.jpg", $paths);
+    }
+
     public function test_the_reference_images_used_are_recorded_on_each_attempt(): void
     {
         $user = User::factory()->create();
